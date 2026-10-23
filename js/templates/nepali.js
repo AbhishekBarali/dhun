@@ -1,5 +1,6 @@
-// Nepali looks: mountains, prayer flags, lali gurans, diyo, dhaka, tihar and
-// village terraces. Made for lok geet, dohori, adhunik love songs and bhajans.
+// Nepali looks: hills, mountains, temples, prayer flags, lali gurans, diyo,
+// mandala, madal, sarangi, dhaka and tihar. Made for lok geet, dohori,
+// adhunik love songs and bhajans.
 import {
   TAU, clamp, lerp, smooth, rng, noise1, rgba, mix, shade,
   resample, mirrored, smoothLine, band,
@@ -52,6 +53,27 @@ function glowLine(ctx, pts, halo, core, lw) {
 function quad(x0, y0, x1, y1, x2, y2, t) {
   const u = 1 - t;
   return [u * u * x0 + 2 * u * t * x1 + t * t * x2, u * u * y0 + 2 * u * t * y1 + t * t * y2];
+}
+
+// Fast rise, slow fall: things jump with a hit and settle gently.
+const follow = (cur, target, up = 0.55, down = 0.16) => lerp(cur, target, target > cur ? up : down);
+
+// Spectrum shaped for a bottom wave: bass in the middle, quiet at both ends.
+function waveShape(f, out, phase = 0) {
+  const n = out.length;
+  const m = mirrored(f.a.bands, n);
+  for (let i = 0; i < n; i++) {
+    const x = i / (n - 1);
+    const flow = 0.8 + 0.2 * Math.sin(i * 0.5 - f.t * 2.4 + phase);
+    out[i] = clamp(m[i] * flow) * Math.pow(Math.sin(Math.PI * x), 0.9);
+  }
+  return out;
+}
+
+function wavePts(arr, w, y, amp) {
+  const n = arr.length, pts = [];
+  for (let i = 0; i < n; i++) pts.push([(i / (n - 1)) * w, y - arr[i] * amp]);
+  return pts;
 }
 
 // Value from a half spectrum (bass first) by distance from a centre x.
@@ -262,27 +284,35 @@ const prayerFlags = {
   ne: 'लुङ्टा',
   cat: 'nepali',
   text: (f) => (f.portrait
-    ? { title: { y: 0.74, font: 'baloo' }, sub: { y: 0.785 } }
-    : { title: { y: 0.78, font: 'baloo' }, sub: { y: 0.86 } }),
+    ? { title: { y: 0.7, font: 'baloo' }, sub: { y: 0.745 } }
+    : { title: { y: 0.66, font: 'baloo' }, sub: { y: 0.74 } }),
   setup(f) {
-    const { w, s } = f;
+    const { w, h, s } = f;
     const r = rng(5);
+    // two strings that never cross: a small one far away, a big one in front
     const defs = f.portrait ? [
-      { x0: -0.04 * w, y0: 0.02 * s, x1: 1.04 * w, y1: 0.1 * s, cy: 0.34 * s, size: 0.8, dark: 0.22 },
-      { x0: -0.04 * w, y0: 0.14 * s, x1: 1.04 * w, y1: 0.05 * s, cy: 0.5 * s, size: 1, dark: 0 },
+      { x0: -0.05 * w, y0: 0.05 * h, x1: 1.05 * w, y1: 0.08 * h, cy: 0.22 * h, size: 0.8, dark: 0.25 },
+      { x0: -0.05 * w, y0: 0.19 * h, x1: 1.05 * w, y1: 0.17 * h, cy: 0.38 * h, size: 1, dark: 0 },
     ] : [
-      { x0: -0.04 * w, y0: -0.03 * s, x1: 1.04 * w, y1: 0.1 * s, cy: 0.27 * s, size: 0.78, dark: 0.22 },
-      { x0: -0.04 * w, y0: 0.06 * s, x1: 1.04 * w, y1: 0.0 * s, cy: 0.37 * s, size: 1, dark: 0 },
+      { x0: -0.05 * w, y0: 0.04 * h, x1: 1.05 * w, y1: 0.1 * h, cy: 0.24 * h, size: 0.75, dark: 0.25 },
+      { x0: -0.05 * w, y0: 0.21 * h, x1: 1.05 * w, y1: 0.16 * h, cy: 0.5 * h, size: 1, dark: 0 },
     ];
     const strings = defs.map((d, j) => {
-      const fw = s * (f.portrait ? 0.095 : 0.075) * d.size, gap = fw * 0.3;
+      const fw = s * (f.portrait ? 0.095 : 0.075) * d.size, gap = fw * 0.5;
       const len = w * 1.12;
       const count = Math.max(5, Math.floor(len / (fw + gap)));
       const dt = fw / len;
       const flags = [];
+      let ci = j * 2;
       for (let i = 0; i < count; i++) {
         const t0 = (i + 0.5) / count - dt / 2;
-        flags.push({ t0, t1: t0 + dt, ph: r() * TAU, col: shade(FLAG_COLORS[(i + j * 2) % 5], -d.dark), white: (i + j * 2) % 5 === 1, fh: fw * (1.15 + r() * 0.12) });
+        const fh = fw * (1.15 + r() * 0.12);
+        // keep every flag inside the frame, even when the wind lifts it
+        const A = quad(d.x0, d.y0, (d.x0 + d.x1) / 2, d.cy, d.x1, d.y1, t0);
+        const B = quad(d.x0, d.y0, (d.x0 + d.x1) / 2, d.cy, d.x1, d.y1, t0 + dt);
+        if (A[0] < w * 0.015 || B[0] + fh * 0.95 > w * 0.985) continue;
+        flags.push({ t0, t1: t0 + dt, ph: r() * TAU, col: shade(FLAG_COLORS[ci % 5], -d.dark), white: ci % 5 === 1, fh });
+        ci++;
       }
       return { ...d, flags, seed: j };
     });
@@ -303,13 +333,13 @@ const prayerFlags = {
     ink.rect(0.38, 0.33, 0.035, 0.295);
     ink.rect(0.585, 0.33, 0.035, 0.295);
     ink.rect(0.45, 0.42, 0.1, 0.11);
-    return { strings, ink, wind: 0.3, gustT: -10 };
+    return { strings, ink, wind: 0.3, gustT: -10, tmp: new Float32Array(48), threads: FLAG_COLORS.map(() => new Float32Array(48)) };
   },
   draw(ctx, f, st) {
     const { w, h, s, a } = f;
     photoBackground(ctx, f, { dim: 0.08 });
-    fadeEdge(ctx, f, 'top', 0.4, 0.3);
-    fadeEdge(ctx, f, 'bottom', 0.5, 0.65);
+    fadeEdge(ctx, f, 'top', 0.45, 0.32);
+    fadeEdge(ctx, f, 'bottom', 0.45, 0.72);
 
     st.wind = smooth(st.wind, 0.2 + a.level * 0.6 + a.energy * 0.3, f.dt, 2.5);
     if (a.beatHit) st.gustT = f.t;
@@ -362,6 +392,30 @@ const prayerFlags = {
       ctx.strokeStyle = S.dark ? 'rgba(200,190,170,0.7)' : 'rgba(235,225,205,0.9)';
       ctx.stroke();
     }
+
+    // five threads in the flag colours: one soft wave at the bottom.
+    // The top thread follows the music fastest, each one below lags a little more.
+    waveShape(f, st.tmp);
+    const by = h * 0.92, amp = s * (f.portrait ? 0.12 : 0.1) * (1 + a.kick * 0.1), gap = s * 0.007;
+    const lw = Math.max(1, s * 0.0028);
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let j = st.threads.length - 1; j >= 0; j--) {
+      const arr = st.threads[j], up = 0.5 / (1 + j * 0.6);
+      for (let i = 0; i < arr.length; i++) arr[i] = follow(arr[i], st.tmp[i], up, up * 0.35);
+      const pts = wavePts(arr, w, by + (j - 2) * gap, amp);
+      const col = j === 0 ? '#4b8fe2' : FLAG_COLORS[j];
+      ctx.beginPath();
+      smoothLine(ctx, pts);
+      ctx.strokeStyle = rgba(col, 0.18);
+      ctx.lineWidth = lw * 3.5;
+      ctx.stroke();
+      ctx.strokeStyle = rgba(col, 0.92);
+      ctx.lineWidth = lw;
+      ctx.stroke();
+    }
+    ctx.restore();
   },
 };
 
@@ -1092,8 +1146,8 @@ const tihar = {
   ne: 'तिहार',
   cat: 'nepali',
   text: (f) => (f.portrait
-    ? { title: { y: 0.72, font: 'yatra', color: '#ffd27a', style: 'glow' }, sub: { y: 0.765 } }
-    : { title: { y: 0.74, font: 'yatra', color: '#ffd27a', style: 'glow' }, sub: { y: 0.82 } }),
+    ? { title: { y: 0.7, font: 'yatra', color: '#ffd27a', style: 'glow' }, sub: { y: 0.745 } }
+    : { title: { y: 0.64, font: 'yatra', color: '#ffd27a', style: 'glow' }, sub: { y: 0.72 } }),
   setup(f) {
     const { s } = f;
     const D = Math.max(8, Math.round(s * 0.05));
@@ -1119,6 +1173,7 @@ const tihar = {
         return c;
       })(),
       spacing: D * 0.7,
+      wave: new Float32Array(56), echo: new Float32Array(56), tmp: new Float32Array(56),
     };
   },
   draw(ctx, f, st) {
@@ -1147,16 +1202,17 @@ const tihar = {
     ctx.restore();
 
     st.sway = smooth(st.sway, a.kick * 0.5 + a.level * 0.2, f.dt, 4);
-    const K = st.K, D = st.D, hy = -s * 0.012;
-    const hx = (k) => (k / K) * w;
+    // garlands hang from points inside the frame, so no flower is cut in half
+    const K = st.K, D = st.D, hy = D * 0.6, mx0 = D * 0.75;
+    const hx = (k) => mx0 + (k / K) * (w - mx0 * 2);
 
     // fairy lights: two deeper drapes behind the flowers
     const lights = [];
     for (let k = 0; k < K; k++) {
       lights.push([hx(k), hy, hx(k + 1), hy, s * 0.24]);
     }
-    lights.push([-0.02 * w, s * 0.02, 1.02 * w, s * 0.02, s * (f.portrait ? 0.42 : 0.36)]);
-    if (f.portrait) lights.push([-0.02 * w, s * 0.3, 1.02 * w, s * 0.3, s * 0.5]);
+    lights.push([hx(0), hy + s * 0.02, hx(K), hy + s * 0.02, s * (f.portrait ? 0.42 : 0.33)]);
+    if (f.portrait) lights.push([hx(0), s * 0.3, hx(K), s * 0.3, s * 0.5]);
     ctx.lineWidth = Math.max(1, s * 0.0018);
     ctx.strokeStyle = 'rgba(30,20,10,0.7)';
     let bi = 0;
@@ -1236,182 +1292,936 @@ const tihar = {
       ctx.drawImage(st.leafC, -D, D * 0.05, D * 2, D * 2);
       ctx.restore();
     }
+
+    // a string of lights along the bottom that rides the music
+    waveShape(f, st.tmp);
+    const n = st.wave.length;
+    for (let i = 0; i < n; i++) {
+      st.wave[i] = follow(st.wave[i], st.tmp[i]);
+      st.echo[i] = lerp(st.echo[i], st.wave[i], 0.07);
+    }
+    const by = h * 0.94, amp = s * (f.portrait ? 0.13 : 0.11) * (1 + a.kick * 0.1);
+    const pts = wavePts(st.wave, w, by, amp), ech = wavePts(st.echo, w, by, amp * 1.3);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.beginPath();
+    smoothLine(ctx, pts);
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    const wg = ctx.createLinearGradient(0, by - amp, 0, h);
+    wg.addColorStop(0, `rgba(255,150,40,${0.2 + a.beat * 0.12})`);
+    wg.addColorStop(1, 'rgba(255,120,30,0.02)');
+    ctx.fillStyle = wg;
+    ctx.fill();
+    ctx.restore();
+    ctx.beginPath();
+    smoothLine(ctx, ech);
+    ctx.lineWidth = Math.max(1, s * 0.002);
+    ctx.strokeStyle = 'rgba(255,200,120,0.35)';
+    ctx.stroke();
+    glowLine(ctx, pts, 'rgba(255,170,60,1)', 'rgba(255,236,190,0.95)', Math.max(1.2, s * 0.0035));
+    const nb = Math.max(9, Math.round(w / (s * 0.06)));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 1; i < nb; i++) {
+      const u = i / nb, p = u * (n - 1), j = Math.floor(p);
+      const v = lerp(st.wave[j], st.wave[Math.min(n - 1, j + 1)], p - j);
+      const g = s * (0.03 + v * 0.05 + (i % 3 === a.beats % 3 ? a.beat * 0.025 : 0));
+      ctx.globalAlpha = 0.45 + v * 0.55;
+      ctx.drawImage(st.glows[i % 4], u * w - g / 2, by - v * amp - g / 2, g, g);
+    }
+    ctx.restore();
   },
 };
 
-// ---------- Gaun (village terraces) ----------
+// ---------- Pahad (misty hills) ----------
 
-const FIELDS = ['#7d9b3c', '#a6ae45', '#5f8c33', '#c9ad4c', '#6e9a3a', '#93ab42', '#d4b452', '#5c8a31', '#86a43e', '#b8aa48', '#64903a', '#a8b04a'];
-
-const terraces = {
-  id: 'terraces',
-  name: 'Gaun',
-  ne: 'गाउँ',
+const pahad = {
+  id: 'pahad',
+  name: 'Pahad',
+  ne: 'पहाड',
   cat: 'nepali',
-  text: () => ({ title: { y: 0.13, font: 'baloo' } }),
+  text: (f) => ({
+    title: { y: f.portrait ? 0.14 : 0.13, font: 'kalam', size: 0.08 },
+    sub: { y: f.portrait ? 0.185 : 0.215 },
+  }),
   setup(f) {
-    const { w, h, s } = f;
-    const K = f.portrait ? 12 : 10, n = 40;
-    const y0 = h * (f.portrait ? 0.55 : 0.56);
-    const bands = [];
-    for (let k = 0; k < K; k++) {
-      const base = y0 + (h * 1.02 - y0) * Math.pow(k / K, 1.3);
-      const H = s * (f.portrait ? 0.3 : 0.24) * (1 - 0.7 * (k / K));
-      const wd1 = (s * (0.45 + 0.08 * k)) / w, wd2 = (s * (0.32 + 0.06 * k)) / w;
-      const ys = new Float32Array(n);
-      for (let i = 0; i < n; i++) {
-        const x = i / (n - 1);
-        const g1 = Math.exp(-Math.pow((x - 0.33) / wd1, 2));
-        const g2 = Math.exp(-Math.pow((x - 0.86) / wd2, 2));
-        ys[i] = base - H * (g1 + 0.6 * g2) + noise1(x * (w / s) * 2.5 + k * 3.1, 2) * s * 0.008;
-      }
-      const haze = 0.5 * Math.pow(1 - k / (K - 1), 1.5);
-      bands.push({ ys, rip: new Float32Array(n), col: mix(FIELDS[k % FIELDS.length], '#c8cfc2', haze), amp: s * 0.045 * (0.4 + k / K) });
+    const P = f.portrait;
+    // back to front: the far hills take the high notes and move slowly,
+    // the near hill takes the bass and moves fast
+    const defs = [
+      { base: P ? 0.66 : 0.66, hill: 0.22, mus: 0.06, lo: 0.5, hi: 0.9, up: 0.1, down: 0.035, drift: 0.006, roll: 2.2, alpha: 0.82 },
+      { base: P ? 0.74 : 0.75, hill: 0.17, mus: 0.07, lo: 0.28, hi: 0.55, up: 0.2, down: 0.06, drift: 0.01, roll: 2.6, alpha: 0.94 },
+      { base: P ? 0.83 : 0.85, hill: 0.13, mus: 0.08, lo: 0.1, hi: 0.32, up: 0.35, down: 0.1, drift: 0.016, roll: 3, alpha: 0.97 },
+      { base: P ? 0.93 : 0.96, hill: 0.09, mus: 0.11, lo: 0, hi: 0.15, up: 0.6, down: 0.15, drift: 0.025, roll: 3.4, alpha: 1 },
+    ];
+    const layers = defs.map((d, k) => ({ ...d, seed: k * 7 + 3, v: new Float32Array(24) }));
+    const r = rng(41);
+    const birds = [];
+    for (let i = 0; i < 5; i++) {
+      const row = Math.ceil(i / 2), side = i % 2 ? -1 : 1;
+      birds.push({ dx: -row * (1.6 + r() * 0.8), dy: side * row * (0.9 + r() * 0.5), ph: r() * TAU, sz: 0.8 + r() * 0.35 });
     }
-    return { bands, K, n, y0 };
+    return { layers, n: 64, birds };
   },
   draw(ctx, f, st) {
     const { w, h, s, a } = f;
-    photoBackground(ctx, f, { dim: 0.04, zoom: 0.06 });
-    const sky = ctx.createLinearGradient(0, 0, 0, st.y0);
-    sky.addColorStop(0, 'rgba(25,35,70,0.3)');
-    sky.addColorStop(1, 'rgba(255,205,145,0.35)');
+    photoBackground(ctx, f, { dim: 0.05, zoom: 0.07 });
+    // dusk grade: cool sky above, warm light near the hills
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, 'rgba(14,18,46,0.55)');
+    sky.addColorStop(0.35, 'rgba(60,46,96,0.22)');
+    sky.addColorStop(0.6, 'rgba(255,170,130,0.28)');
+    sky.addColorStop(1, 'rgba(40,30,60,0.3)');
     ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, st.y0 + 1);
+    ctx.fillRect(0, 0, w, h);
+    const back = st.layers[0];
+    const lx = w * 0.5, ly = h * back.base - s * 0.12;
+    const lr = s * (0.7 + a.bass * 0.15);
+    const light = ctx.createRadialGradient(lx, ly, 0, lx, ly, lr);
+    light.addColorStop(0, `rgba(255,214,170,${0.32 + a.beat * 0.1})`);
+    light.addColorStop(1, 'rgba(255,190,150,0)');
+    ctx.fillStyle = light;
+    // the hills cover what is below, so light only the sky
+    const ly0 = Math.max(0, ly - lr);
+    ctx.fillRect(0, ly0, w, back.base * h - ly0);
 
-    // an occasional small flock crossing the sky
-    const ph = (f.t + 2) % 24;
-    if (ph < 11) {
-      const fx = -0.15 * w + (ph / 11) * w * 1.3;
-      const fy = h * (f.portrait ? 0.3 : 0.28) + Math.sin(ph * 0.6) * s * 0.02;
-      const bw = s * 0.018;
-      ctx.strokeStyle = 'rgba(30,28,35,0.75)';
-      ctx.lineWidth = Math.max(1, s * 0.0028);
+    // a few birds glide across now and then
+    const ph = (f.t + 3) % 18;
+    if (ph < 10) {
+      const fx = -0.1 * w + (ph / 10) * w * 1.25;
+      const fy = h * (f.portrait ? 0.34 : 0.3) + Math.sin(ph * 0.5) * s * 0.015;
+      const fade = clamp(Math.min(ph, 10 - ph) * 1.5);
+      const bw = s * 0.011;
+      ctx.strokeStyle = `rgba(22,20,38,${0.65 * fade})`;
+      ctx.lineWidth = Math.max(1, s * 0.0022);
       ctx.lineCap = 'round';
       ctx.beginPath();
-      for (let i = 0; i < 7; i++) {
-        const row = Math.ceil(i / 2), side = i % 2 ? 1 : -1;
-        const x = fx - row * bw * 2.2 + Math.sin(f.t * 1.3 + i) * bw * 0.3;
-        const y = fy + side * row * bw * 1.4 + Math.cos(f.t * 1.1 + i * 2) * bw * 0.3;
-        const fl = Math.sin(f.t * (7 + a.level * 4) + i * 1.3) * bw * 0.55;
-        ctx.moveTo(x - bw, y - fl);
-        ctx.quadraticCurveTo(x - bw * 0.4, y - bw * 0.2, x, y);
-        ctx.quadraticCurveTo(x + bw * 0.4, y - bw * 0.2, x + bw, y - fl);
+      for (const b of st.birds) {
+        const x = fx + b.dx * bw * 2 + Math.sin(f.t * 0.9 + b.ph) * bw * 0.4;
+        const y = fy + b.dy * bw * 2 + Math.cos(f.t * 0.7 + b.ph) * bw * 0.4;
+        const z = bw * b.sz, fl = Math.sin(f.t * 4.5 + b.ph) * z * 0.5;
+        ctx.moveTo(x - z, y - fl);
+        ctx.quadraticCurveTo(x - z * 0.4, y - z * 0.25, x, y);
+        ctx.quadraticCurveTo(x + z * 0.4, y - z * 0.25, x + z, y - fl);
       }
       ctx.stroke();
     }
 
-    // haze at the horizon
-    const hz = ctx.createLinearGradient(0, st.y0 - s * 0.3, 0, st.y0 + s * 0.05);
-    hz.addColorStop(0, 'rgba(255,230,195,0)');
-    hz.addColorStop(1, 'rgba(255,230,195,0.4)');
-    ctx.fillStyle = hz;
-    ctx.fillRect(0, st.y0 - s * 0.3, w, s * 0.35);
-
-    // ripple flows down the hill from the back terrace
-    const n = st.n, K = st.K, B = st.bands;
-    const m = mirrored(a.bands, n);
-    for (let k = K - 1; k > 0; k--) {
-      for (let i = 0; i < n; i++) B[k].rip[i] = lerp(B[k].rip[i], B[k - 1].rip[i], 0.3);
-    }
-    for (let i = 0; i < n; i++) B[0].rip[i] = lerp(B[0].rip[i], m[i] * (1 + a.kick * 0.4), 0.4);
-
-    const gleam = 0.2 + a.beat * 0.35;
-    for (let k = 0; k < K; k++) {
-      const bd = B[k];
+    const n = st.n, aspect = w / s;
+    const haze = mix(f.photo.palette.light || '#e8d6e6', '#c99aa8', 0.7);
+    const navy = '#121428';
+    const rim = mix(f.color.accent, '#ffd8a8', 0.45);
+    for (let k = 0; k < st.layers.length; k++) {
+      const L = st.layers[k];
+      const i0 = Math.floor(L.lo * 64), i1 = Math.max(i0 + 2, Math.ceil(L.hi * 64));
+      const m = mirrored(f.a.bands.subarray(i0, i1), L.v.length);
+      const lift = 1 + (k === 3 ? a.kick * 0.25 : 0);
+      for (let i = 0; i < L.v.length; i++) L.v[i] = follow(L.v[i], m[i] * lift, L.up, L.down);
+      const by = L.base * h;
+      const off = f.t * L.drift;
       const pts = [];
       let top = h;
       for (let i = 0; i < n; i++) {
-        const y = bd.ys[i] - bd.rip[i] * bd.amp;
-        pts.push([(i / (n - 1)) * w, y]);
+        const x = i / (n - 1), u = x * aspect;
+        const nz = 0.6 * noise1(u * L.roll + off * L.roll, L.seed) + 0.3 * noise1(u * L.roll * 2.3 + off * 2, L.seed + 1) + 0.1 * noise1(u * L.roll * 5.1, L.seed + 2);
+        const prof = clamp(0.5 + 0.7 * nz);
+        const p = x * (L.v.length - 1), j = Math.floor(p);
+        const v = lerp(L.v[j], L.v[Math.min(L.v.length - 1, j + 1)], p - j);
+        const flow = 0.75 + 0.25 * Math.sin(x * TAU * 1.3 - f.t * (0.5 + k * 0.35) + L.seed);
+        const y = by - s * (L.hill * prof + L.mus * v * flow);
+        pts.push([x * w, y]);
         if (y < top) top = y;
       }
-      const next = k < K - 1 ? B[k + 1].ys[Math.floor(n / 2)] : h;
-      const deep = Math.max(s * 0.04, (next - bd.ys[Math.floor(n / 2)]) * 1.6);
-      // fill only down to where the next terrace covers it
-      let low = h;
-      if (k < K - 1) {
-        low = 0;
-        for (let i = 0; i < n; i++) low = Math.max(low, B[k + 1].ys[i]);
-        low = Math.min(h, low + 2);
-      }
+      // fill only down to where the next hill is sure to cover it
+      const low = k < st.layers.length - 1 ? st.layers[k + 1].base * h + 2 : h;
       ctx.beginPath();
       smoothLine(ctx, pts);
       ctx.lineTo(w, low);
       ctx.lineTo(0, low);
       ctx.closePath();
-      const g = ctx.createLinearGradient(0, top, 0, top + deep + s * 0.12);
-      g.addColorStop(0, shade(bd.col, 0.12));
-      g.addColorStop(0.5, bd.col);
-      g.addColorStop(1, shade(bd.col, -0.35));
+      const g = ctx.createLinearGradient(0, top, 0, by + s * 0.1);
+      // far hills fade into the haze, near ones are almost night
+      const col = mix(haze, navy, 0.42 + 0.58 * Math.pow(k / 3, 1.1));
+      g.addColorStop(0, rgba(col, L.alpha));
+      g.addColorStop(1, rgba(mix(col, haze, k < 3 ? 0.3 : 0.08), L.alpha));
       ctx.fillStyle = g;
       ctx.fill();
-      // the earth wall under the field edge
-      const wall = Math.max(1.5, s * (0.004 + 0.012 * (k / K)));
-      ctx.save();
-      ctx.translate(0, wall / 2);
-      ctx.beginPath();
-      smoothLine(ctx, pts);
-      ctx.lineWidth = wall;
-      ctx.strokeStyle = rgba(mix(shade(bd.col, -0.45), '#5a4426', 0.35), 0.8);
-      ctx.stroke();
-      ctx.restore();
-      ctx.beginPath();
-      smoothLine(ctx, pts);
-      ctx.lineWidth = Math.max(1, s * (0.0015 + 0.002 * (k / K)));
-      ctx.strokeStyle = `rgba(255,238,175,${gleam * (0.5 + k / K)})`;
-      ctx.stroke();
-
-      // a little house and trees up on the hill
-      const at = (x) => {
-        const p = x * (n - 1), j = Math.floor(p), fr = p - j;
-        return lerp(pts[j][1], pts[Math.min(n - 1, j + 1)][1], fr);
-      };
-      if (k === 1) {
-        tree(ctx, w * 0.22, at(0.22), s * 0.022);
-        tree(ctx, w * 0.43, at(0.43), s * 0.018);
+      // light catching the ridge
+      if (k < 3) {
+        ctx.beginPath();
+        smoothLine(ctx, pts);
+        ctx.lineWidth = Math.max(1, s * 0.002);
+        ctx.strokeStyle = rgba(rim, 0.18 + k * 0.08 + a.beat * 0.08);
+        ctx.stroke();
+        // mist gathers at the foot of each hill
+        const my = by + s * 0.02;
+        const mg = ctx.createLinearGradient(0, my - s * 0.09, 0, my + s * 0.05);
+        mg.addColorStop(0, rgba(haze, 0));
+        mg.addColorStop(0.7, rgba(haze, 0.2 - k * 0.04));
+        mg.addColorStop(1, rgba(haze, 0));
+        ctx.fillStyle = mg;
+        ctx.fillRect(0, my - s * 0.09, w, s * 0.14);
+      } else {
+        glowLine(ctx, pts, rgba(rim, 0.9), rgba(shade(rim, 0.5), 0.75 + a.beat * 0.25), Math.max(1.2, s * 0.0035 * (1 + a.beat * 0.25)));
       }
-      if (k === 2) house(ctx, w * 0.31, at(0.31), s * 0.034);
-      if (k === 3) tree(ctx, w * 0.8, at(0.8), s * 0.02);
     }
   },
 };
 
-function tree(ctx, x, y, r) {
-  ctx.fillStyle = '#4a3220';
-  ctx.fillRect(x - r * 0.08, y - r * 1.2, r * 0.16, r * 1.3);
-  ctx.fillStyle = '#2e4a22';
-  ctx.beginPath();
-  ctx.arc(x, y - r * 1.5, r * 0.75, 0, TAU);
-  ctx.arc(x - r * 0.45, y - r * 1.15, r * 0.55, 0, TAU);
-  ctx.arc(x + r * 0.45, y - r * 1.15, r * 0.55, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(160,190,90,0.35)';
-  ctx.beginPath();
-  ctx.arc(x - r * 0.2, y - r * 1.75, r * 0.3, 0, TAU);
-  ctx.fill();
+// ---------- Kathmandu (temple skyline) ----------
+
+// A tiered pagoda roof: upturned eaves and a slope that sweeps inward.
+function roof(g, x, y, rw, rh) {
+  const tip = rh * 0.18;
+  g.beginPath();
+  g.moveTo(x - rw / 2, y - tip);
+  g.quadraticCurveTo(x - rw * 0.45, y, x - rw * 0.36, y);
+  g.lineTo(x + rw * 0.36, y);
+  g.quadraticCurveTo(x + rw * 0.45, y, x + rw / 2, y - tip);
+  g.quadraticCurveTo(x + rw * 0.27, y - rh * 0.32, x + rw * 0.15, y - rh);
+  g.lineTo(x - rw * 0.15, y - rh);
+  g.quadraticCurveTo(x - rw * 0.27, y - rh * 0.32, x - rw / 2, y - tip);
+  g.closePath();
+  g.fill();
 }
 
-// A two-tone village house: red mud below, white above, dark roof.
-function house(ctx, x, y, wd) {
-  const hh = wd * 0.7;
-  const bx = x - wd / 2, by = y - hh + wd * 0.08;
-  ctx.fillStyle = '#a5432a';
-  ctx.fillRect(bx, by + hh * 0.5, wd, hh * 0.5);
-  ctx.fillStyle = '#efe6d2';
-  ctx.fillRect(bx, by, wd, hh * 0.5);
-  ctx.fillStyle = '#3d2f28';
-  ctx.beginPath();
-  ctx.moveTo(bx - wd * 0.12, by);
-  ctx.lineTo(bx + wd * 0.18, by - hh * 0.42);
-  ctx.lineTo(bx + wd * 0.82, by - hh * 0.42);
-  ctx.lineTo(bx + wd * 1.12, by);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#2a1e18';
-  ctx.fillRect(bx + wd * 0.2, by + hh * 0.12, wd * 0.14, hh * 0.22);
-  ctx.fillRect(bx + wd * 0.62, by + hh * 0.12, wd * 0.14, hh * 0.22);
-  ctx.fillRect(bx + wd * 0.42, by + hh * 0.55, wd * 0.16, hh * 0.45);
+function pagoda(g, x, by, W, tiers) {
+  let y = by;
+  for (let k = 0; k < 3; k++) {
+    const pw = W * (0.98 - k * 0.12), ph = W * 0.07;
+    g.fillRect(x - pw / 2, y - ph, pw, ph + 0.5);
+    y -= ph;
+  }
+  let bw = W * 0.5, bh = W * 0.3, rw = W * 1.02;
+  for (let k = 0; k < tiers; k++) {
+    g.fillRect(x - bw / 2, y - bh, bw, bh + 0.5);
+    y -= bh;
+    const rh = rw * 0.24;
+    roof(g, x, y + rh * 0.1, rw, rh);
+    y -= rh * 0.9;
+    bw *= 0.8;
+    bh = bw * 0.46;
+    rw *= 0.78;
+  }
+  // gajur: the gilded finial
+  g.beginPath();
+  g.ellipse(x, y - W * 0.03, W * 0.034, W * 0.03, 0, 0, TAU);
+  g.ellipse(x, y - W * 0.09, W * 0.022, W * 0.012, 0, 0, TAU);
+  g.fill();
+  g.beginPath();
+  g.moveTo(x - W * 0.016, y - W * 0.05);
+  g.lineTo(x, y - W * 0.21);
+  g.lineTo(x + W * 0.016, y - W * 0.05);
+  g.closePath();
+  g.fill();
 }
 
-export default [himalaya, prayerFlags, laliGurans, diyo, dhaka, tihar, terraces];
+function stupa(g, x, by, W, body) {
+  let y = by;
+  for (let k = 0; k < 3; k++) {
+    const pw = W * (1 - k * 0.1), ph = W * 0.045;
+    g.fillRect(x - pw / 2, y - ph, pw, ph + 0.5);
+    y -= ph;
+  }
+  const base = y;
+  const dr = W * 0.36, dh = W * 0.3;
+  g.beginPath();
+  g.ellipse(x, y + 0.5, dr, dh, 0, Math.PI, TAU);
+  g.closePath();
+  g.fill();
+  y -= dh * 0.97;
+  g.fillRect(x - W * 0.085, y - W * 0.09, W * 0.17, W * 0.09 + 0.5);
+  y -= W * 0.09;
+  g.fillRect(x - W * 0.105, y - W * 0.025, W * 0.21, W * 0.025 + 0.5);
+  y -= W * 0.025;
+  // thirteen steps of the spire
+  const n = 13, step = (W * 0.36) / n;
+  const spireTop = y - W * 0.36;
+  for (let k = 0; k < n; k++) {
+    const rw = lerp(W * 0.15, W * 0.05, k / (n - 1));
+    g.fillRect(x - rw / 2, y - step * 0.7, rw, step * 0.7 + 0.5);
+    g.fillRect(x - rw * 0.38, y - step - 0.5, rw * 0.76, step + 1);
+    y -= step;
+  }
+  g.beginPath();
+  g.moveTo(x - W * 0.085, y + W * 0.012);
+  g.quadraticCurveTo(x, y - W * 0.06, x + W * 0.085, y + W * 0.012);
+  g.closePath();
+  g.fill();
+  g.beginPath();
+  g.moveTo(x - W * 0.014, y - W * 0.02);
+  g.lineTo(x, y - W * 0.13);
+  g.lineTo(x + W * 0.014, y - W * 0.02);
+  g.closePath();
+  g.fill();
+  // prayer flag lines from the spire down to the ground
+  const keep = g.fillStyle;
+  g.lineWidth = Math.max(1, W * 0.006);
+  g.strokeStyle = keep;
+  for (const side of [-1, 1]) {
+    const x0 = x, y0 = spireTop + W * 0.06, x2 = x + side * W * 1.05, y2 = base + W * 0.02;
+    const x1 = x + side * W * 0.55, y1 = lerp(y0, y2, 0.75);
+    g.beginPath();
+    g.moveTo(x0, y0);
+    g.quadraticCurveTo(x1, y1, x2, y2);
+    g.stroke();
+    const cnt = 14;
+    for (let i = 2; i < cnt; i++) {
+      const [fx, fy] = quad(x0, y0, x1, y1, x2, y2, i / cnt);
+      if (body) g.fillStyle = shade(FLAG_COLORS[i % 5], -0.6);
+      g.fillRect(fx - W * 0.014, fy, W * 0.028, W * 0.034);
+    }
+    g.fillStyle = keep;
+  }
+}
+
+// Houses along the ground, then the temples. Drawn once per pass: the white
+// mask (for the rim light) and the dark silhouette with a few lit windows.
+function skylineArt(g, Wpx, Hpx, s, items, seed, houseK, body) {
+  const r = rng(seed), rw = rng(seed + 99);
+  let x = -s * 0.01;
+  while (x < Wpx) {
+    const ww = s * (0.035 + r() * 0.05), hh = s * (0.045 + r() * 0.06) * houseK;
+    g.fillRect(x, Hpx - hh, ww + 1, hh + 1);
+    g.fillRect(x - ww * 0.05, Hpx - hh - s * 0.004, ww * 1.1, s * 0.006);
+    if (body && rw() < 0.5) {
+      const keep = g.fillStyle;
+      g.fillStyle = 'rgba(255,184,100,0.8)';
+      const cnt = 1 + Math.floor(rw() * 2);
+      for (let k = 0; k < cnt; k++) {
+        g.fillRect(x + ww * (0.2 + rw() * 0.55), Hpx - hh * (0.3 + rw() * 0.5), s * 0.006, s * 0.008);
+      }
+      g.fillStyle = keep;
+    }
+    x += ww;
+  }
+  for (const it of items) {
+    if (it.t === 'stupa') stupa(g, it.x * Wpx, Hpx, it.W * s, body);
+    else pagoda(g, it.x * Wpx, Hpx, it.W * s, it.tiers);
+  }
+}
+
+function buildSkyline(Wpx, Hpx, s, items, seed, houseK, color) {
+  const mask = makeCanvas(Wpx, Hpx), mg = mask.getContext('2d');
+  mg.fillStyle = '#ffffff';
+  skylineArt(mg, Wpx, Hpx, s, items, seed, houseK, false);
+  const body = makeCanvas(Wpx, Hpx), bg = body.getContext('2d');
+  const grad = bg.createLinearGradient(0, Hpx * 0.3, 0, Hpx);
+  grad.addColorStop(0, color[0]);
+  grad.addColorStop(1, color[1]);
+  bg.fillStyle = grad;
+  skylineArt(bg, Wpx, Hpx, s, items, seed, houseK, true);
+  return { mask, body };
+}
+
+function tintCanvas(dst, src, col) {
+  const g = dst.getContext('2d');
+  g.clearRect(0, 0, dst.width, dst.height);
+  g.globalCompositeOperation = 'source-over';
+  g.drawImage(src, 0, 0);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = col;
+  g.fillRect(0, 0, dst.width, dst.height);
+  g.globalCompositeOperation = 'source-over';
+}
+
+const kathmandu = {
+  id: 'kathmandu',
+  name: 'Kathmandu',
+  ne: 'काठमाडौं',
+  cat: 'nepali',
+  text: (f) => ({
+    title: { y: f.portrait ? 0.14 : 0.13, font: 'rozha', size: 0.08 },
+    sub: { y: f.portrait ? 0.185 : 0.215 },
+  }),
+  setup(f) {
+    const { w, s } = f;
+    const narrow = w / s < 1.3;
+    const front = narrow
+      ? [{ t: 'stupa', x: 0.3, W: 0.34 }, { t: 'pagoda', x: 0.75, W: 0.22, tiers: 4 }]
+      : [{ t: 'pagoda', x: 0.12, W: 0.14, tiers: 3 }, { t: 'stupa', x: 0.36, W: 0.28 }, { t: 'pagoda', x: 0.62, W: 0.17, tiers: 5 }, { t: 'pagoda', x: 0.87, W: 0.14, tiers: 2 }];
+    const backItems = narrow
+      ? [{ t: 'pagoda', x: 0.08, W: 0.1, tiers: 3 }, { t: 'pagoda', x: 0.55, W: 0.09, tiers: 2 }, { t: 'pagoda', x: 0.95, W: 0.1, tiers: 3 }]
+      : [{ t: 'pagoda', x: 0.03, W: 0.09, tiers: 3 }, { t: 'pagoda', x: 0.25, W: 0.08, tiers: 2 }, { t: 'pagoda', x: 0.49, W: 0.1, tiers: 4 }, { t: 'pagoda', x: 0.75, W: 0.08, tiers: 3 }, { t: 'stupa', x: 0.97, W: 0.14 }];
+    const H = Math.ceil(s * 0.48), W = Math.ceil(w);
+    const fr = buildSkyline(W, H, s, front, 31, 1, ['#1a1530', '#06050b']);
+    const bk = buildSkyline(W, H, s, backItems, 57, 1.25, ['#3a3360', '#2a2448']);
+    // the rim: what is left of the mask after shifting it down and sideways
+    const d = Math.max(1.5, s * 0.004);
+    const rim = makeCanvas(W, H), rg = rim.getContext('2d');
+    rg.drawImage(fr.mask, 0, 0);
+    rg.globalCompositeOperation = 'destination-out';
+    rg.drawImage(fr.mask, 0, d);
+    rg.drawImage(fr.mask, d * 0.7, d * 0.7);
+    rg.drawImage(fr.mask, -d * 0.7, d * 0.7);
+    return {
+      H, body: fr.body, back: bk.body, rim,
+      rimT: makeCanvas(W, H), glowT: makeCanvas(W, H), rimFor: '',
+      v: new Float32Array(64), echo: new Float32Array(64), tmp: new Float32Array(64),
+    };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    const acc = f.color.accent;
+    if (st.rimFor !== acc) {
+      st.rimFor = acc;
+      const col = mix(acc, '#ffe2b8', 0.3);
+      tintCanvas(st.rimT, st.rim, col);
+      const g = st.glowT.getContext('2d');
+      g.clearRect(0, 0, st.glowT.width, st.glowT.height);
+      g.save();
+      g.shadowColor = col;
+      g.shadowBlur = s * 0.03;
+      g.drawImage(st.rimT, 0, 0);
+      g.drawImage(st.rimT, 0, 0);
+      g.restore();
+    }
+    photoBackground(ctx, f, { dim: 0.1, zoom: 0.06 });
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, 'rgba(18,16,52,0.6)');
+    sky.addColorStop(0.45, 'rgba(90,50,100,0.3)');
+    sky.addColorStop(0.8, 'rgba(255,140,90,0.35)');
+    sky.addColorStop(1, 'rgba(255,120,70,0.3)');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+
+    // the glowing wave rises behind the skyline
+    waveShape(f, st.tmp);
+    const n = st.v.length;
+    for (let i = 0; i < n; i++) {
+      st.v[i] = follow(st.v[i], st.tmp[i] * (1 + a.kick * 0.15));
+      st.echo[i] = lerp(st.echo[i], st.v[i], 0.06);
+    }
+    const by = h - s * 0.1, amp = s * (f.portrait ? 0.42 : 0.34);
+    const pts = wavePts(st.v, w, by, amp), ech = wavePts(st.echo, w, by, amp * 1.2);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.beginPath();
+    smoothLine(ctx, pts);
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    const wg = ctx.createLinearGradient(0, by - amp, 0, by);
+    wg.addColorStop(0, rgba(acc, 0.36 + a.beat * 0.14));
+    wg.addColorStop(1, rgba(acc, 0.06));
+    ctx.fillStyle = wg;
+    ctx.fill();
+    ctx.restore();
+    ctx.beginPath();
+    smoothLine(ctx, ech);
+    ctx.lineWidth = Math.max(1, s * 0.002);
+    ctx.strokeStyle = rgba(shade(acc, 0.4), 0.35);
+    ctx.stroke();
+    glowLine(ctx, pts, rgba(acc, 1), 'rgba(255,244,228,0.95)', Math.max(1.2, s * 0.004));
+
+    // far temples in the haze, then the near skyline with its rim light
+    const top = h - st.H;
+    ctx.globalAlpha = 0.78;
+    ctx.drawImage(st.back, 0, top);
+    ctx.globalAlpha = 1;
+    const hz = ctx.createLinearGradient(0, h - s * 0.2, 0, h);
+    hz.addColorStop(0, 'rgba(255,190,150,0)');
+    hz.addColorStop(1, 'rgba(255,190,150,0.22)');
+    ctx.fillStyle = hz;
+    ctx.fillRect(0, h - s * 0.2, w, s * 0.2);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = clamp(0.35 + a.bass * 0.25 + a.beat * 0.3);
+    ctx.drawImage(st.glowT, 0, top);
+    ctx.restore();
+    ctx.drawImage(st.body, 0, top);
+    ctx.globalAlpha = clamp(0.7 + a.beat * 0.3);
+    ctx.drawImage(st.rimT, 0, top);
+    ctx.globalAlpha = 1;
+  },
+};
+
+// ---------- Sarangi (plucked strings) ----------
+
+const sarangi = {
+  id: 'sarangi',
+  name: 'Sarangi',
+  ne: 'सारङ्गी',
+  cat: 'nepali',
+  text: (f) => ({
+    title: { y: f.portrait ? 0.15 : 0.14, font: 'martel', color: '#f6dca0' },
+    sub: { y: f.portrait ? 0.195 : 0.225, color: '#f3e6cc' },
+  }),
+  setup() {
+    const N = 5, r = rng(29);
+    const strings = [];
+    for (let i = 0; i < N; i++) {
+      const k = i / (N - 1); // 0 = top string (high notes), 1 = bottom (bass)
+      const lo = (1 - k) * 0.55;
+      strings.push({ k, lo, hi: lo + 0.16, prev: 0, hum: 0, e: 0, ph: r() * TAU, ph2: r() * TAU, fr: 2 + (1 - k) * 1.3 + r() * 0.3 });
+    }
+    return { strings, N };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    photoBackground(ctx, f, { dim: 0.12, zoom: 0.06 });
+    ctx.fillStyle = 'rgba(80,38,8,0.26)';
+    ctx.fillRect(0, 0, w, h);
+    fadeEdge(ctx, f, 'bottom', 0.6, 0.82, '#120802');
+    vignette(ctx, f, 0.5);
+
+    const P = f.portrait;
+    const y0 = h * (P ? 0.68 : 0.64), y1 = h * (P ? 0.85 : 0.86);
+    const x0 = w * 0.03, x1 = w * 0.97, L = x1 - x0;
+    const my = (y0 + y1) / 2;
+
+    // warm lamp light behind the strings
+    ctx.save();
+    ctx.translate(w / 2, my);
+    ctx.scale(1, (s * 0.32) / (w * 0.55));
+    const lg = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.55);
+    lg.addColorStop(0, `rgba(255,180,90,${0.16 + a.level * 0.12 + a.beat * 0.06})`);
+    lg.addColorStop(1, 'rgba(255,150,60,0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(-w * 0.55, -w * 0.55, w * 1.1, w * 1.1);
+    ctx.restore();
+
+    // pluck: a new note on a string's own band, and each beat picks a string
+    const pick = a.beatHit ? a.beats % st.N : -1;
+    for (let i = 0; i < st.N; i++) {
+      const S = st.strings[i];
+      const lv = band(f, S.lo, S.hi);
+      const rise = lv - S.prev;
+      S.prev = lv;
+      if (rise > 0.025) S.e += rise * 4;
+      if (a.beatHit && S.k > 0.7) S.e += 0.25 + a.bass * 0.25;
+      if (i === pick) S.e += 0.4;
+      S.e = Math.min(1.2, S.e * Math.exp(-f.dt * 2.2));
+      S.hum = follow(S.hum, lv, 0.4, 0.08);
+      S.ph += f.dt * TAU * S.fr;
+      S.ph2 += f.dt * TAU * S.fr * 2.02;
+    }
+
+    const n = 44;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < st.N; i++) {
+      const S = st.strings[i];
+      const y = lerp(y0, y1, S.k);
+      const A = s * (0.003 + 0.045 * S.e + 0.012 * S.hum) * (P ? 1.15 : 1);
+      const c1 = Math.cos(S.ph), c2 = Math.cos(S.ph2) * 0.3;
+      const pts = [], up = [], dn = [];
+      for (let j = 0; j < n; j++) {
+        const u = j / (n - 1), x = x0 + u * L;
+        const m1 = Math.sin(Math.PI * u), m2 = Math.sin(TAU * u);
+        pts.push([x, y + A * (m1 * c1 + m2 * c2)]);
+        const env = A * (m1 + 0.3 * Math.abs(m2));
+        up.push([x, y - env]);
+        dn.push([x, y + env]);
+      }
+      // the blur a vibrating string leaves in the eye
+      ctx.beginPath();
+      smoothLine(ctx, up);
+      smoothLine(ctx, dn.reverse(), false);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(255,205,120,${0.03 + S.e * 0.06})`;
+      ctx.fill();
+
+      const lw = Math.max(1.2, s * (0.0032 + 0.0026 * S.k));
+      const sg = ctx.createLinearGradient(x0, 0, x1, 0);
+      const hi = mix(mix('#ffe2a0', f.color.accent, 0.25), '#fff8e8', clamp(S.e));
+      // the ends fade out softly instead of stopping hard
+      sg.addColorStop(0, 'rgba(154,106,44,0)');
+      sg.addColorStop(0.08, '#e0ad62');
+      sg.addColorStop(0.5, hi);
+      sg.addColorStop(0.92, '#e0ad62');
+      sg.addColorStop(1, 'rgba(154,106,44,0)');
+      ctx.beginPath();
+      smoothLine(ctx, pts);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.22 + S.e * 0.35;
+      ctx.strokeStyle = sg;
+      ctx.lineWidth = lw * 5;
+      ctx.stroke();
+      ctx.restore();
+      ctx.strokeStyle = sg;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+};
+
+// ---------- Mandala ----------
+
+// A pointed lotus petal outline from radius r0 to r1 around angle an.
+function lotusPetal(g, r0, r1, an, hw) {
+  const L = polar(r0, an - hw), Rt = polar(r0, an + hw), tip = polar(r1, an);
+  const c1 = polar(r0 + (r1 - r0) * 0.8, an - hw * 1.05), c2 = polar(r0 + (r1 - r0) * 0.8, an + hw * 1.05);
+  g.beginPath();
+  g.moveTo(L[0], L[1]);
+  g.quadraticCurveTo(c1[0], c1[1], tip[0], tip[1]);
+  g.quadraticCurveTo(c2[0], c2[1], Rt[0], Rt[1]);
+  g.stroke();
+}
+
+// Two fine line layers drawn once: an inner rosette of linked circles and an
+// outer lotus. They turn in opposite directions.
+function mandalaLayers(R) {
+  const size = Math.ceil(R * 2.1 + 4);
+  const lw = Math.max(1, R * 0.0055);
+  const make = () => {
+    const c = makeCanvas(size, size), g = c.getContext('2d');
+    g.translate(size / 2, size / 2);
+    g.strokeStyle = GOLD;
+    g.fillStyle = GOLD;
+    g.lineWidth = lw;
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
+    return [c, g];
+  };
+  const [inner, gi] = make();
+  ring(gi, R * 0.585);
+  gi.globalAlpha = 0.75;
+  ring(gi, R * 0.605);
+  for (let k = 0; k < 16; k++) {
+    const [x, y] = polar(R * 0.705, (k / 16) * TAU);
+    gi.beginPath();
+    gi.arc(x, y, R * 0.1, 0, TAU);
+    gi.stroke();
+  }
+  gi.globalAlpha = 1;
+  dots(gi, 16, R * 0.705, R * 0.009, TAU / 32);
+  ring(gi, R * 0.81);
+
+  const [outer, go] = make();
+  ring(go, R * 0.835);
+  for (let k = 0; k < 12; k++) {
+    const an = (k / 12) * TAU;
+    lotusPetal(go, R * 0.835, R, an, TAU / 24 * 0.95);
+    go.globalAlpha = 0.6;
+    lotusPetal(go, R * 0.835, R * 0.93, an, TAU / 24 * 0.55);
+    go.globalAlpha = 0.85;
+    lotusPetal(go, R * 0.835, R * 0.9, an + TAU / 24, TAU / 24 * 0.5);
+    go.globalAlpha = 1;
+  }
+  dots(go, 12, R * 1.025, R * 0.008);
+  return { inner, outer, size };
+}
+
+const mandala = {
+  id: 'mandala',
+  name: 'Mandala',
+  ne: 'मण्डल',
+  cat: 'nepali',
+  text: (f) => (f.portrait
+    ? { title: { y: 0.7, font: 'yatra', color: '#ffd98a', style: 'glow' }, sub: { y: 0.745, color: '#f6e7c8' } }
+    : { title: { y: 0.855, font: 'yatra', color: '#ffd98a', style: 'glow', size: 0.068 }, sub: { y: 0.93, color: '#f6e7c8', size: 0.034 } }),
+  setup(f) {
+    const pr = f.s * (f.portrait ? 0.18 : 0.145);
+    const R = pr / 0.56;
+    const n = f.portrait ? 100 : 120;
+    return { pr, R, man: mandalaLayers(R), n, bars: new Float32Array(n), spin: 0 };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    photoBackground(ctx, f, { kind: 'blur', dim: 0.45, zoom: 0.08 });
+
+    const cx = w / 2, cy = h * (f.portrait ? 0.4 : 0.41);
+    const R = st.R, pr = st.pr;
+    // one fill: gold glow round the mandala, a deep red wash, dark corners
+    const far = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy));
+    const t1 = clamp((R * (1.5 + a.bass * 0.4) - pr) / (far - pr), 0.05, 0.85);
+    const bg = ctx.createRadialGradient(cx, cy, pr, cx, cy, far);
+    bg.addColorStop(0, `rgba(255,180,80,${0.3 + a.beat * 0.15})`);
+    bg.addColorStop(t1, 'rgba(52,10,26,0.4)');
+    bg.addColorStop(1, 'rgba(22,4,12,0.82)');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    // the spectrum ring, bass at the top
+    const n = st.n, m = mirrored(a.bands, n);
+    const r0 = R * 1.07;
+    const lw = Math.max(1.2, ((TAU * r0) / n) * 0.34);
+    const sg = ctx.createRadialGradient(cx, cy, r0, cx, cy, r0 + s * 0.075);
+    sg.addColorStop(0, GOLD);
+    sg.addColorStop(1, SAFFRON);
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      st.bars[i] = follow(st.bars[i], m[i] * (1 + a.kick * 0.12), 0.6, 0.15);
+      const an = (i / n) * TAU + Math.PI / 2;
+      const len = s * (0.006 + 0.065 * st.bars[i]);
+      const c = Math.cos(an), sn = Math.sin(an);
+      ctx.moveTo(cx + c * r0, cy + sn * r0);
+      ctx.lineTo(cx + c * (r0 + len), cy + sn * (r0 + len));
+    }
+    ctx.lineCap = 'round';
+    ctx.lineWidth = lw * 3;
+    ctx.strokeStyle = 'rgba(255,170,70,0.12)';
+    ctx.stroke();
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = sg;
+    ctx.stroke();
+
+    // the turning mandala
+    st.spin += f.dt * (0.03 + a.energy * 0.03);
+    const ms = st.man.size;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.globalAlpha = 0.85 + a.beat * 0.15;
+    ctx.save();
+    ctx.rotate(-st.spin * 0.7);
+    ctx.drawImage(st.man.outer, -ms / 2, -ms / 2);
+    ctx.restore();
+    ctx.rotate(st.spin);
+    ctx.drawImage(st.man.inner, -ms / 2, -ms / 2);
+    ctx.restore();
+
+    // the photo in a thin gold ring
+    ctx.beginPath();
+    ctx.arc(cx, cy, pr + s * 0.004, 0, TAU);
+    ctx.fillStyle = GOLD;
+    ctx.fill();
+    circlePhoto(ctx, f, cx, cy, pr, 1.05 + a.beat * 0.02);
+  },
+};
+
+// ---------- Dhaka Band (woven border and a wave) ----------
+
+// A strip of dhaka weave: a row of stepped diamonds between two borders.
+function dhakaBandTile(cell) {
+  const C = DHAKA, P = 12, G = 13;
+  const c = makeCanvas(P * cell, G * cell), g = c.getContext('2d');
+  for (let j = 0; j < G; j++) {
+    for (let i = 0; i < P; i++) {
+      let col;
+      if (j === 0 || j === G - 1) col = C.black;
+      else if (j === 1 || j === G - 2) col = i % 2 ? C.white : C.red;
+      else {
+        const d = Math.abs(i - 6) + Math.abs(j - 6);
+        if (d === 0) col = C.yellow;
+        else if (d <= 1) col = C.black;
+        else if (d <= 2) col = C.white;
+        else if (d <= 3) col = C.red;
+        else if (d <= 4) col = C.orange;
+        else if (d <= 5) col = C.green;
+        else if (d <= 6) col = C.white;
+        else col = (i + j) % 2 ? C.black : '#2a1d1a';
+      }
+      g.fillStyle = col;
+      g.fillRect(i * cell, j * cell, cell, cell);
+    }
+  }
+  for (let j = 0; j < G; j++) {
+    g.fillStyle = 'rgba(255,255,255,0.08)';
+    g.fillRect(0, j * cell, P * cell, Math.max(1, cell * 0.35));
+    g.fillStyle = 'rgba(0,0,0,0.14)';
+    g.fillRect(0, j * cell + cell * 0.7, P * cell, Math.max(1, cell * 0.3));
+  }
+  return c;
+}
+
+const dhakaWave = {
+  id: 'dhaka-wave',
+  name: 'Dhaka Band',
+  ne: 'ढाका पट्टी',
+  cat: 'nepali',
+  text: (f) => ({
+    title: { y: f.portrait ? 0.14 : 0.13, font: 'baloo', size: 0.08 },
+    sub: { y: f.portrait ? 0.185 : 0.215 },
+  }),
+  setup(f) {
+    const cell = Math.max(2, Math.round((f.s * (f.portrait ? 0.05 : 0.055)) / 13));
+    const n = 56;
+    return {
+      cell, tile: dhakaBandTile(cell), ctx: null,
+      layers: [0, 1, 2].map(() => new Float32Array(n)), tmp: new Float32Array(n),
+    };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    if (st.ctx !== ctx) {
+      st.ctx = ctx;
+      st.pat = ctx.createPattern(st.tile, 'repeat');
+    }
+    photoBackground(ctx, f, { dim: 0.05 });
+    fadeEdge(ctx, f, 'top', 0.3, 0.35);
+    fadeEdge(ctx, f, 'bottom', 0.45, 0.6);
+
+    const bandH = st.cell * 13, base = h - bandH;
+    const amp = s * (f.portrait ? 0.19 : 0.16) * (1 + a.kick * 0.1);
+    // back to front: green (slow), orange, red (fast)
+    const defs = [
+      [DHAKA.green, 1.45, 0.14, 0.04, 2.2],
+      [DHAKA.orange, 1.2, 0.28, 0.08, 1.1],
+      [DHAKA.red, 1, 0.55, 0.18, 0],
+    ];
+    ctx.save();
+    ctx.lineJoin = 'round';
+    for (let k = 0; k < 3; k++) {
+      const [col, kk, up, down, phase] = defs[k];
+      const arr = st.layers[k];
+      waveShape(f, st.tmp, phase);
+      for (let i = 0; i < arr.length; i++) arr[i] = follow(arr[i], st.tmp[i], up, down);
+      const pts = wavePts(arr, w, base, amp * kk);
+      ctx.beginPath();
+      smoothLine(ctx, pts);
+      ctx.lineTo(w, base + 1);
+      ctx.lineTo(0, base + 1);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(0, base - amp * kk, 0, base);
+      g.addColorStop(0, rgba(shade(col, 0.15), 0.9));
+      g.addColorStop(1, rgba(shade(col, -0.45), 0.35));
+      ctx.globalAlpha = 0.78;
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      smoothLine(ctx, pts);
+      if (k < 2) {
+        ctx.strokeStyle = 'rgba(14,8,8,0.6)';
+        ctx.lineWidth = Math.max(1, s * 0.003);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = 'rgba(14,8,8,0.5)';
+        ctx.lineWidth = Math.max(2, s * 0.008);
+        ctx.stroke();
+        ctx.strokeStyle = DHAKA.white;
+        ctx.lineWidth = Math.max(1.2, s * 0.0035);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // the woven band slides slowly along the bottom
+    const T = st.tile.width;
+    const shift = (f.t * s * 0.02) % T;
+    ctx.save();
+    ctx.translate(-shift, base);
+    ctx.fillStyle = st.pat;
+    ctx.fillRect(0, 0, w + T, bandH);
+    ctx.restore();
+    if (a.beat > 0.02) {
+      ctx.fillStyle = `rgba(255,240,210,${a.beat * 0.14})`;
+      ctx.fillRect(0, base, w, bandH);
+    }
+    ctx.fillStyle = DHAKA.white;
+    ctx.fillRect(0, base - Math.max(1, s * 0.002), w, Math.max(1, s * 0.002));
+  },
+};
+
+// ---------- Madal (drum skin ripples) ----------
+
+const madal = {
+  id: 'madal',
+  name: 'Madal',
+  ne: 'मादल',
+  cat: 'nepali',
+  text: (f) => (f.portrait
+    ? { title: { y: 0.72, font: 'mukta', color: '#f7e2b8' }, sub: { y: 0.765, color: '#efdcc0' } }
+    : { title: { y: 0.83, font: 'mukta', color: '#f7e2b8', size: 0.07 }, sub: { y: 0.905, color: '#efdcc0', size: 0.034 } }),
+  setup(f) {
+    const r = rng(13);
+    const rings = Array.from({ length: 14 }, () => ({ age: 9, str: 0, k: 6, ph: 0, col: 0 }));
+    return { pr: f.s * (f.portrait ? 0.22 : 0.18), rings, r, midPrev: 0, lastMid: -1, flex: 0, pts: 120 };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    photoBackground(ctx, f, { kind: 'blur', dim: 0.38, zoom: 0.08 });
+
+    const cx = w / 2, cy = h * (f.portrait ? 0.4 : 0.42);
+    st.flex = follow(st.flex, a.kick, 0.7, 0.15);
+    const pr = st.pr * (1 + st.flex * 0.03);
+    const rimW = s * 0.03;
+
+    const spawn = (str, delay) => {
+      let best = st.rings[0];
+      for (const R of st.rings) if (R.age > best.age) best = R;
+      best.age = -delay;
+      best.str = str;
+      best.k = 5 + Math.floor(st.r() * 4);
+      best.ph = st.r() * TAU;
+      best.col = Math.floor(st.r() * 3);
+    };
+    if (a.beatHit) {
+      spawn(0.7 + a.bass * 0.3, 0);
+      spawn(0.35, 0.14);
+    }
+    const rise = a.mid - st.midPrev;
+    st.midPrev = a.mid;
+    if (rise > 0.05 && f.t - st.lastMid > 0.2) {
+      st.lastMid = f.t;
+      spawn(0.3, 0);
+    }
+
+    // one fill: warm glow round the drum, earthy wash, dark corners
+    const far = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy));
+    const t1 = clamp((pr * (2.6 + a.bass * 0.5) - pr) / (far - pr), 0.05, 0.85);
+    const glow = ctx.createRadialGradient(cx, cy, pr, cx, cy, far);
+    glow.addColorStop(0, `rgba(230,150,70,${0.34 + a.beat * 0.16})`);
+    glow.addColorStop(t1, 'rgba(74,36,12,0.4)');
+    glow.addColorStop(1, 'rgba(30,12,4,0.82)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+
+    // ripples spreading out from the drum
+    const COLS = ['#f3d9a6', '#d98a4a', '#e9b872'];
+    const dur = 2.4, np = st.pts;
+    ctx.save();
+    for (const R of st.rings) {
+      R.age += f.dt;
+      if (R.age < 0 || R.age > dur) continue;
+      const p = R.age / dur;
+      const rad = pr + rimW + (1 - Math.pow(1 - p, 2.4)) * s * (0.25 + 0.35 * R.str);
+      const alpha = Math.pow(1 - p, 1.5) * R.str;
+      const wob = s * 0.007 * (1 - p) * R.str;
+      ctx.beginPath();
+      for (let i = 0; i <= np; i++) {
+        const an = (i / np) * TAU;
+        const rr = rad + Math.sin(an * R.k + R.ph + f.t * 1.5) * wob;
+        const x = cx + Math.cos(an) * rr, y = cy + Math.sin(an) * rr;
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = rgba(COLS[R.col], alpha * 0.9);
+      ctx.lineWidth = Math.max(1, s * 0.006 * (1 - p * 0.7) * (0.6 + R.str * 0.6));
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // the drum: leather rim with laced straps
+    const r1 = pr + rimW;
+    const lea = ctx.createRadialGradient(cx, cy, pr, cx, cy, r1);
+    lea.addColorStop(0, '#2c180c');
+    lea.addColorStop(0.5, '#6e3f1e');
+    lea.addColorStop(1, '#3a2010');
+    ctx.beginPath();
+    ctx.arc(cx, cy, r1, 0, TAU);
+    ctx.fillStyle = lea;
+    ctx.fill();
+    const lace = 28;
+    ctx.beginPath();
+    for (let i = 0; i <= lace * 2; i++) {
+      const an = (i / (lace * 2)) * TAU;
+      const rr = i % 2 ? r1 - rimW * 0.15 : pr + rimW * 0.15;
+      const x = cx + Math.cos(an) * rr, y = cy + Math.sin(an) * rr;
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = '#e8d2a2';
+    ctx.lineWidth = Math.max(1, s * 0.0028);
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r1, 0, TAU);
+    ctx.strokeStyle = `rgba(240,190,120,${0.6 + a.beat * 0.4})`;
+    ctx.lineWidth = Math.max(1, s * 0.003);
+    ctx.stroke();
+    circlePhoto(ctx, f, cx, cy, pr, 1.05 + st.flex * 0.025);
+    ctx.beginPath();
+    ctx.arc(cx, cy, pr, 0, TAU);
+    ctx.strokeStyle = 'rgba(20,10,4,0.6)';
+    ctx.lineWidth = Math.max(1, s * 0.003);
+    ctx.stroke();
+  },
+};
+
+export default [himalaya, pahad, kathmandu, prayerFlags, laliGurans, diyo, mandala, madal, sarangi, dhaka, dhakaWave, tihar];

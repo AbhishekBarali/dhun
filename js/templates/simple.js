@@ -2,7 +2,7 @@
 import {
   TAU, clamp, lerp, rgba, shade, mix, mirrored, resample, smoothLine, smoothLoop,
   photoBackground, fadeEdge, vignette, circlePhoto, coverPhoto, withGlow,
-  roundRect, drawCover, band, noise1, formatTime,
+  roundRect, drawCover, band, noise1, formatTime, rng, slowZoom,
 } from '../helpers.js';
 import { fontCss } from '../fonts.js';
 
@@ -755,4 +755,613 @@ const pulseLine = {
   },
 };
 
-export default [softWave, circleRing, classicBars, musicPlayer, vinylRecord, oceanWaves, liquidBlob, pulseLine];
+// ---------- Silk Lines ----------
+// Each thread listens to its own slice of the spectrum, bass first.
+const SILK = [
+  { lo: 0.0, hi: 0.08, k: 1.15, sp: 1.1, ph: 0.0, c: 0.0, gain: 1.15 },
+  { lo: 0.06, hi: 0.18, k: 1.55, sp: -1.4, ph: 1.3, c: 0.2, gain: 1.05 },
+  { lo: 0.16, hi: 0.32, k: 2.0, sp: 1.7, ph: 2.6, c: 0.45, gain: 1.0 },
+  { lo: 0.3, hi: 0.5, k: 2.45, sp: -2.0, ph: 3.9, c: 0.7, gain: 1.05 },
+  { lo: 0.48, hi: 0.72, k: 2.9, sp: 2.3, ph: 5.1, c: 1.0, gain: 1.15 },
+  { lo: 0.7, hi: 1.0, k: 3.4, sp: -2.6, ph: 0.7, c: 0.55, gain: 1.25 },
+];
+
+const silkLines = {
+  id: 'silk',
+  name: 'Silk Lines',
+  ne: 'रेशमी धागो',
+  cat: 'simple',
+  setup: () => ({
+    v: new Float32Array(SILK.length), ph: SILK.map((L) => L.ph),
+    pts: Array.from({ length: 72 }, () => [0, 0]),
+  }),
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    photoBackground(ctx, f, { dim: 0.1 });
+    fadeEdge(ctx, f, 'bottom', 0.58, 0.82);
+    fadeEdge(ctx, f, 'top', 0.3, 0.35);
+
+    const cy = h * (f.portrait ? 0.75 : 0.77);
+    const n = st.pts.length;
+    const maxA = s * (f.portrait ? 0.17 : 0.15);
+
+    // soft light behind the threads that breathes with the bass
+    const gr = ctx.createRadialGradient(w / 2, cy, 0, w / 2, cy, w * 0.5);
+    gr.addColorStop(0, rgba(f.color.accent, 0.16 + a.bass * 0.12 + a.beat * 0.06));
+    gr.addColorStop(1, rgba(f.color.accent, 0));
+    ctx.save();
+    ctx.translate(w / 2, cy);
+    ctx.scale(1, 0.32);
+    ctx.translate(-w / 2, -cy);
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, cy - w * 0.5, w, w);
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const thin = Math.max(1.2, s * 0.0026);
+    SILK.forEach((L, j) => {
+      st.v[j] = follow(st.v[j], band(f, L.lo, L.hi) * L.gain, 0.5, 0.07);
+      st.ph[j] += f.dt * L.sp * (0.5 + a.energy * 0.9);
+      const amp = maxA * (0.12 + st.v[j] * 0.88) * (1 + a.kick * 0.18);
+      // the widest part drifts slowly, so the threads cross and weave
+      const c = 0.5 + 0.16 * noise1(f.t * 0.13 + j * 3.1, j);
+      for (let i = 0; i < n; i++) {
+        const x = i / (n - 1);
+        const env = Math.exp(-Math.pow((x - c) / 0.27, 2)) * Math.pow(Math.sin(Math.PI * x), 0.7);
+        st.pts[i][0] = x * w;
+        st.pts[i][1] = cy - amp * env * Math.sin(x * L.k * TAU + st.ph[j]);
+      }
+      const col = shade(mix(f.color.accent2, f.color.accent, L.c), 0.22);
+      // every thread fades out towards both edges
+      const fade = (al, c = col) => {
+        const g = ctx.createLinearGradient(0, 0, w, 0);
+        g.addColorStop(0, rgba(c, 0));
+        g.addColorStop(0.22, rgba(c, al));
+        g.addColorStop(0.78, rgba(c, al));
+        g.addColorStop(1, rgba(c, 0));
+        return g;
+      };
+      // faint body between the thread and the centre line
+      ctx.beginPath();
+      smoothLine(ctx, st.pts);
+      ctx.lineTo(w, cy);
+      ctx.lineTo(0, cy);
+      ctx.closePath();
+      ctx.fillStyle = fade(0.045);
+      ctx.fill();
+      // wide faint stroke for the glow, thin bright one on top
+      ctx.beginPath();
+      smoothLine(ctx, st.pts);
+      ctx.strokeStyle = fade(0.14);
+      ctx.lineWidth = thin * 5;
+      ctx.stroke();
+      ctx.strokeStyle = fade(0.9, shade(col, 0.3));
+      ctx.lineWidth = j === 0 ? thin * 1.4 : thin;
+      ctx.stroke();
+    });
+    ctx.restore();
+
+    // quiet centre thread that fades out at both ends
+    const cl = ctx.createLinearGradient(0, 0, w, 0);
+    cl.addColorStop(0, 'rgba(255,255,255,0)');
+    cl.addColorStop(0.5, 'rgba(255,255,255,0.45)');
+    cl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = cl;
+    ctx.fillRect(0, cy - Math.max(0.5, s * 0.0008), w, Math.max(1, s * 0.0016));
+  },
+};
+
+// ---------- Mirror Bars ----------
+const mirrorBars = {
+  id: 'mirror-bars',
+  name: 'Mirror Bars',
+  ne: 'ऐना बार',
+  cat: 'simple',
+  setup: (f) => {
+    const n = f.portrait ? 52 : f.square ? 68 : 100;
+    return { n, v: new Float32Array(n) };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    photoBackground(ctx, f, { dim: 0.1 });
+    fadeEdge(ctx, f, 'bottom', 0.55, 0.85);
+    fadeEdge(ctx, f, 'top', 0.3, 0.35);
+
+    const n = st.n;
+    const m = mirrored(a.bands, n);
+    const base = h * (f.portrait ? 0.8 : 0.82);
+    const up = s * (f.portrait ? 0.2 : 0.19);
+    const down = up * 0.45;
+    const side = w * (f.portrait ? 0.07 : 0.07);
+    const step = (w - side * 2) / n;
+    const bw = Math.max(1.5, step * 0.5);
+    const gap = Math.max(1, s * 0.003);
+
+    for (let i = 0; i < n; i++) {
+      // a light blur with the neighbours keeps the outline smooth
+      const v = (m[Math.max(0, i - 1)] + m[i] * 2 + m[Math.min(n - 1, i + 1)]) / 4;
+      const x = i / (n - 1);
+      const taper = 0.3 + 0.7 * Math.pow(Math.sin(Math.PI * x), 0.8);
+      st.v[i] = follow(st.v[i], clamp(Math.pow(v, 1.5) * 1.15 * taper * (1 + a.kick * 0.18)), 0.55, 0.12);
+    }
+
+    // soft light under the middle, swelling with the bass
+    const gr = ctx.createRadialGradient(w / 2, base, 0, w / 2, base, w * 0.45);
+    gr.addColorStop(0, rgba(f.color.accent, 0.14 + a.bass * 0.14));
+    gr.addColorStop(1, rgba(f.color.accent, 0));
+    ctx.save();
+    ctx.translate(w / 2, base);
+    ctx.scale(1, 0.35);
+    ctx.translate(-w / 2, -base);
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, base - w * 0.45, w, w * 0.9);
+    ctx.restore();
+
+    // upper half, with a soft glow
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const bh = bw + st.v[i] * up;
+      addPill(ctx, side + i * step + (step - bw) / 2, base - gap - bh, bw, bh, bw / 2);
+    }
+    const g = ctx.createLinearGradient(0, base, 0, base - up);
+    g.addColorStop(0, shade(f.color.accent, 0.1));
+    g.addColorStop(1, shade(f.color.accent2, 0.45));
+    withGlow(ctx, rgba(f.color.accent, 0.45 + a.beat * 0.3), s * 0.012, () => {
+      ctx.fillStyle = g;
+      ctx.fill();
+    });
+
+    // lower half, softer, like a reflection
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const bh = bw + st.v[i] * down;
+      addPill(ctx, side + i * step + (step - bw) / 2, base + gap, bw, bh, bw / 2);
+    }
+    const g2 = ctx.createLinearGradient(0, base, 0, base + down);
+    g2.addColorStop(0, rgba(shade(f.color.accent, 0.2), 0.6));
+    g2.addColorStop(1, rgba(f.color.accent, 0.15));
+    ctx.fillStyle = g2;
+    ctx.fill();
+  },
+};
+
+// ---------- Liquid ----------
+const liquid = {
+  id: 'liquid',
+  name: 'Liquid',
+  ne: 'पानीको सतह',
+  cat: 'simple',
+  setup() {
+    const r = rng(41);
+    const bubbles = [];
+    for (let i = 0; i < 26; i++) {
+      bubbles.push({ x: 0.04 + r() * 0.92, u: r(), sp: 0.08 + r() * 0.12, rad: 0.003 + r() * 0.006, ph: r() * TAU });
+    }
+    const n = 56;
+    return {
+      bubbles, n, spec: new Float32Array(n), tmp: new Float32Array(n), ripples: [],
+      front: Array.from({ length: n }, () => [0, 0]), back: Array.from({ length: n }, () => [0, 0]),
+    };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    photoBackground(ctx, f, { dim: 0.08 });
+    fadeEdge(ctx, f, 'top', 0.3, 0.35);
+    fadeEdge(ctx, f, 'bottom', 0.45, 0.45);
+
+    const n = st.n;
+    // spectrum, bass in the middle, blurred into a gentle swell
+    const m = mirrored(a.bands, n);
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 0; i < n; i++) st.tmp[i] = (m[Math.max(0, i - 1)] + m[i] * 2 + m[Math.min(n - 1, i + 1)]) / 4;
+      m.set(st.tmp);
+    }
+    for (let i = 0; i < n; i++) st.spec[i] = follow(st.spec[i], m[i], 0.45, 0.08);
+
+    // each beat sends a ripple out from the middle
+    if (a.beatHit) st.ripples.push(0);
+    for (let k = st.ripples.length - 1; k >= 0; k--) {
+      st.ripples[k] += f.dt;
+      if (st.ripples[k] > 2.5) st.ripples.splice(k, 1);
+    }
+
+    const level = h * (f.portrait ? 0.8 : 0.8) - a.energy * s * 0.03;
+    const x0 = -w * 0.02, dx = (w * 1.04) / (n - 1);
+    let top = h;
+    const surface = (pts, lift, sp, ph, amp) => {
+      for (let i = 0; i < n; i++) {
+        const x = i / (n - 1);
+        let y = level - lift
+          - s * (0.024 * Math.sin(x * TAU * 1.1 + f.t * 0.9 * sp + ph) + 0.012 * Math.sin(x * TAU * 2.7 - f.t * 1.6 * sp + ph * 2)) * (0.7 + a.level * 0.6)
+          - st.spec[i] * s * 0.09 * amp;
+        for (const age of st.ripples) {
+          const d = Math.abs(x - 0.5) * w - age * s * 0.55;
+          if (d < 0 && d > -s * 0.5) y -= s * 0.012 * amp * Math.exp(-age * 1.6) * Math.sin(d / (s * 0.05)) * Math.min(1, -d / (s * 0.05));
+        }
+        pts[i][0] = x0 + i * dx;
+        pts[i][1] = y;
+        if (y < top) top = y;
+      }
+    };
+    surface(st.back, s * 0.028, -0.8, 2.1, 0.75);
+    surface(st.front, 0, 1, 0, 1);
+
+    const fill = (pts) => {
+      ctx.beginPath();
+      smoothLine(ctx, pts);
+      ctx.lineTo(w * 1.02, h);
+      ctx.lineTo(-w * 0.02, h);
+      ctx.closePath();
+    };
+    // back layer
+    fill(st.back);
+    ctx.fillStyle = rgba(shade(f.color.accent2, 0.1), 0.38);
+    ctx.fill();
+    ctx.beginPath();
+    smoothLine(ctx, st.back);
+    ctx.lineWidth = Math.max(1, s * 0.0018);
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.stroke();
+
+    // front water
+    fill(st.front);
+    const g = ctx.createLinearGradient(0, top, 0, h);
+    const wc = mix(f.color.accent, f.color.accent2, 0.35);
+    g.addColorStop(0, rgba(shade(wc, -0.05), 0.55));
+    g.addColorStop(0.35, rgba(shade(wc, -0.5), 0.8));
+    g.addColorStop(1, rgba(shade(wc, -0.82), 0.95));
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    // light just under the surface
+    ctx.save();
+    ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
+    const lg = ctx.createLinearGradient(0, top, 0, top + s * 0.12);
+    lg.addColorStop(0, rgba(shade(f.color.accent, 0.4), 0.22 + a.beat * 0.08));
+    lg.addColorStop(1, rgba(f.color.accent, 0));
+    ctx.fillStyle = lg;
+    ctx.fillRect(0, top, w, s * 0.12);
+
+    // bubbles rising through the water
+    ctx.lineWidth = Math.max(1, s * 0.0016);
+    for (const b of st.bubbles) {
+      b.u += f.dt * b.sp * (0.5 + a.level * 0.8);
+      if (b.u > 1) b.u -= 1;
+      const bx = b.x * w + Math.sin(b.u * TAU * 1.5 + b.ph) * s * 0.008;
+      const k = clamp((bx - x0) / dx, 0, n - 1.001);
+      const i = Math.floor(k);
+      const sy = lerp(st.front[i][1], st.front[i + 1][1], k - i);
+      const r = b.rad * s * (0.8 + b.u * 0.5);
+      const by = lerp(h + r, sy + r * 2, b.u);
+      const alpha = Math.min(1, (1 - b.u) * 5) * Math.min(1, b.u * 8);
+      ctx.beginPath();
+      ctx.arc(bx, by, r, 0, TAU);
+      ctx.strokeStyle = `rgba(255,255,255,${0.4 * alpha})`;
+      ctx.stroke();
+      ctx.fillStyle = `rgba(255,255,255,${0.1 * alpha})`;
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // bright crest
+    ctx.beginPath();
+    smoothLine(ctx, st.front);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = rgba(shade(f.color.accent, 0.5), 0.25);
+    ctx.lineWidth = Math.max(2, s * 0.012);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = Math.max(1.2, s * 0.0028);
+    ctx.stroke();
+  },
+};
+
+// ---------- Dot Wave ----------
+const DOT_ROWS = 16;
+
+const dotWave = {
+  id: 'dot-wave',
+  name: 'Dot Wave',
+  ne: 'थोप्लो लहर',
+  cat: 'simple',
+  setup: (f) => {
+    const cols = f.portrait ? 30 : f.square ? 40 : 56;
+    return { cols, hist: new Float32Array(DOT_ROWS * cols), now: new Float32Array(cols) };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    photoBackground(ctx, f, { dim: 0.12 });
+    fadeEdge(ctx, f, 'bottom', 0.6, 0.9);
+    fadeEdge(ctx, f, 'top', 0.3, 0.35);
+
+    const C = st.cols, R = DOT_ROWS;
+    const m = mirrored(a.bands, C);
+    // the front row follows the music, every row behind it follows the one in front
+    const near = (R - 1) * C;
+    for (let c = 0; c < C; c++) {
+      const v = (m[Math.max(0, c - 1)] + m[c] * 2 + m[Math.min(C - 1, c + 1)]) / 4;
+      st.hist[near + c] = follow(st.hist[near + c], clamp(v * v * 1.3 * (1 + a.kick * 0.25)), 0.5, 0.12);
+    }
+    const k = 1 - Math.exp(-f.dt * 7);
+    for (let r = 0; r < R - 1; r++) {
+      for (let c = 0; c < C; c++) st.hist[r * C + c] = lerp(st.hist[r * C + c], st.hist[(r + 1) * C + c], k);
+    }
+
+    const hy = h * (f.portrait ? 0.6 : 0.56);
+    const yNear = h * (f.portrait ? 0.93 : 0.93);
+    const spanNear = w * (f.portrait ? 0.96 : 0.92);
+    const zFar = 4;
+    const lift = s * (f.portrait ? 0.13 : 0.15);
+    const dot = s * (f.portrait ? 0.0056 : 0.0042);
+    for (let r = 0; r < R; r++) {
+      const p = r / (R - 1);
+      const z = lerp(zFar, 1, p);
+      const sc = 1 / z;
+      const y0 = hy + (yNear - hy) * (sc - 1 / zFar) / (1 - 1 / zFar);
+      const span = spanNear * sc;
+      const col = shade(mix(f.color.accent2, f.color.accent, p), 0.2 + 0.15 * p);
+      // fade towards both sides, so the field ends softly
+      const g = ctx.createLinearGradient(w / 2 - span / 2, 0, w / 2 + span / 2, 0);
+      const al = 0.2 + 0.8 * p;
+      g.addColorStop(0, rgba(col, 0));
+      g.addColorStop(0.2, rgba(col, al));
+      g.addColorStop(0.8, rgba(col, al));
+      g.addColorStop(1, rgba(col, 0));
+      ctx.beginPath();
+      for (let c = 0; c < C; c++) {
+        const v = st.hist[r * C + c];
+        const xn = c / (C - 1);
+        const x = w / 2 + (xn - 0.5) * span;
+        const amb = Math.sin(xn * 9 + f.t * 1.4 + r * 0.6) * 0.012 + Math.sin(xn * 4 - f.t * 0.8 + r * 0.3) * 0.01;
+        const y = y0 - (v * lift + amb * s) * sc;
+        const rad = Math.max(0.6, dot * sc * (0.75 + v * 0.7));
+        ctx.moveTo(x + rad, y);
+        ctx.arc(x, y, rad, 0, TAU);
+      }
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+    // soft halo on the front rows, swelling on the beat
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const hg = ctx.createRadialGradient(w / 2, yNear, 0, w / 2, yNear, spanNear * 0.55);
+    hg.addColorStop(0, rgba(f.color.accent, 0.12 + a.bass * 0.1 + a.beat * 0.05));
+    hg.addColorStop(1, rgba(f.color.accent, 0));
+    ctx.translate(w / 2, yNear);
+    ctx.scale(1, 0.4);
+    ctx.translate(-w / 2, -yNear);
+    ctx.fillStyle = hg;
+    ctx.fillRect(0, yNear - spanNear * 0.55, w, spanNear * 1.1);
+    ctx.restore();
+  },
+};
+
+// ---------- Aurora ----------
+// A curtain texture: bright along the bottom edge, fading upwards, with fine
+// vertical streaks. Drawn once per colour, then stretched slice by slice.
+function auroraTexture(col, top, seed) {
+  const TW = 256, TH = 256;
+  const c = document.createElement('canvas');
+  c.width = TW; c.height = TH;
+  const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, TH);
+  gr.addColorStop(0, rgba(top, 0));
+  gr.addColorStop(0.45, rgba(mix(top, col, 0.5), 0.35));
+  gr.addColorStop(0.86, rgba(col, 0.95));
+  gr.addColorStop(0.93, rgba(shade(col, 0.5), 1));
+  gr.addColorStop(1, rgba(col, 0));
+  g.fillStyle = gr;
+  g.fillRect(0, 0, TW, TH);
+  // streaks: keep each column at its own strength
+  const mask = document.createElement('canvas');
+  mask.width = TW; mask.height = 1;
+  const mg = mask.getContext('2d');
+  for (let x = 0; x < TW; x++) {
+    const v = 0.5 + 0.3 * noise1(x * 0.09, seed) + 0.2 * noise1(x * 0.37, seed + 3);
+    mg.fillStyle = `rgba(0,0,0,${clamp(v * v * 1.4, 0.25, 1)})`;
+    mg.fillRect(x, 0, 1, 1);
+  }
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(mask, 0, 0, TW, TH);
+  return c;
+}
+
+const CURTAINS = [
+  { y: 0.36, hgt: 0.3, lo: 0.3, hi: 0.7, sp: 0.6, ph: 0.4, seed: 2, col: 'accent2', alpha: 0.55 },
+  { y: 0.47, hgt: 0.34, lo: 0.0, hi: 0.3, sp: -0.45, ph: 2.3, seed: 5, col: 'accent', alpha: 0.75 },
+  { y: 0.52, hgt: 0.22, lo: 0.55, hi: 1.0, sp: 0.8, ph: 4.1, seed: 9, col: 'mix', alpha: 0.5 },
+];
+const AURORA_SLICES = 84;
+
+const aurora = {
+  id: 'aurora',
+  name: 'Aurora',
+  ne: 'आकाशको ज्योति',
+  cat: 'simple',
+  text: (f) => (f.portrait
+    ? { title: { y: 0.66 }, sub: { y: 0.705 } }
+    : { title: { y: 0.68 }, sub: { y: 0.76 } }),
+  setup: () => ({
+    tex: {}, v: CURTAINS.map(() => new Float32Array(AURORA_SLICES)),
+    line: new Float32Array(64), pts: Array.from({ length: 64 }, () => [0, 0]),
+  }),
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    photoBackground(ctx, f, { dim: 0.5 });
+    fadeEdge(ctx, f, 'top', 0.7, 0.62, '#02040c');
+    fadeEdge(ctx, f, 'bottom', 0.4, 0.75);
+
+    const lift = f.portrait ? -0.06 : 0;
+    const S = AURORA_SLICES;
+    // the curtains are soft, so they are drawn at half size and scaled up
+    const q = 0.4;
+    const bw = Math.max(1, Math.round(w * q)), bhh = Math.max(1, Math.round(h * 0.72 * q));
+    if (!st.buf) st.buf = document.createElement('canvas');
+    if (st.buf.width !== bw || st.buf.height !== bhh) { st.buf.width = bw; st.buf.height = bhh; }
+    const bx = st.buf.getContext('2d');
+    bx.globalCompositeOperation = 'source-over';
+    bx.globalAlpha = 1;
+    bx.clearRect(0, 0, bw, bhh);
+    bx.globalCompositeOperation = 'lighter';
+    CURTAINS.forEach((L, j) => {
+      const base = L.col === 'mix' ? mix(f.color.accent, f.color.accent2, 0.5) : f.color[L.col];
+      const col = shade(base, 0.3);
+      const key = col + j;
+      if (!st.tex[key]) st.tex[key] = auroraTexture(col, shade(f.color.accent2, 0.1), L.seed);
+      const tex = st.tex[key];
+      const v = st.v[j];
+      const spec = band(f, L.lo, L.hi);
+      const by = h * (L.y + lift);
+      const ph = f.t * 0.05 * L.sp + L.ph;
+      for (let i = 0; i < S; i++) {
+        const xn = (i + 0.5) / S;
+        // the curtain's strength travels slowly along its length
+        const local = spec * (0.75 + 0.35 * Math.sin(xn * 7 + f.t * L.sp * 1.3 + L.ph));
+        v[i] = follow(v[i], local, 0.35, 0.05);
+        const x0 = Math.round((i / S) * bw), x1 = Math.round(((i + 1) / S) * bw);
+        const yb = by + s * (0.07 * Math.sin(xn * TAU * 0.75 + ph) + 0.035 * Math.sin(xn * TAU * 1.9 - ph * 1.7) + 0.02 * noise1(xn * 4 + f.t * 0.12, j));
+        const hh = s * L.hgt * (0.65 + v[i] * 0.7) * (1 + a.kick * 0.06);
+        const edge = Math.pow(Math.sin(Math.PI * xn), 0.6);
+        bx.globalAlpha = clamp(L.alpha * edge * (0.35 + v[i] * 0.9 + a.beat * 0.08));
+        // streaks sway slowly sideways, like a real curtain of light
+        const sx = 52 + xn * 150 + 45 * Math.sin(f.t * 0.07 * L.sp + j * 2);
+        bx.drawImage(tex, sx, 0, 150 / S, 256, x0, (yb - hh) * q, x1 - x0, hh * 1.08 * q);
+      }
+    });
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(st.buf, 0, 0, w, bhh / q);
+    ctx.restore();
+
+    // thin glowing wave line along the bottom
+    const n = st.line.length;
+    const m = mirrored(a.bands, n);
+    const cy = h * (f.portrait ? 0.86 : 0.88);
+    const amp = s * 0.055 * (1 + a.kick * 0.15);
+    for (let i = 0; i < n; i++) {
+      const x = i / (n - 1);
+      const v = (m[Math.max(0, i - 1)] + m[i] * 2 + m[Math.min(n - 1, i + 1)]) / 4;
+      st.line[i] = follow(st.line[i], v * Math.pow(Math.sin(Math.PI * x), 1.2), 0.5, 0.1);
+      st.pts[i][0] = w * (0.08 + x * 0.84);
+      st.pts[i][1] = cy - st.line[i] * amp * Math.sin(x * TAU * 3 + f.t * 1.2);
+    }
+    const lg = ctx.createLinearGradient(w * 0.08, 0, w * 0.92, 0);
+    lg.addColorStop(0, rgba(f.color.accent2, 0));
+    lg.addColorStop(0.5, shade(f.color.accent, 0.55));
+    lg.addColorStop(1, rgba(f.color.accent2, 0));
+    ctx.lineCap = 'round';
+    withGlow(ctx, rgba(f.color.accent, 0.9), s * 0.02, () => {
+      ctx.beginPath();
+      smoothLine(ctx, st.pts);
+      ctx.strokeStyle = lg;
+      ctx.lineWidth = Math.max(1.5, s * 0.003);
+      ctx.stroke();
+    });
+  },
+};
+
+// ---------- Horizon ----------
+// Height of each black band.
+function horizonBand(f) {
+  if (f.portrait) return f.h * 0.15;
+  if (f.square) return f.h * 0.15;
+  return f.h * 0.14;
+}
+
+const horizon = {
+  id: 'horizon',
+  name: 'Horizon',
+  ne: 'क्षितिज',
+  cat: 'simple',
+  text(f) {
+    const b = horizonBand(f) / f.h;
+    return {
+      title: { y: b * 0.44, size: f.portrait ? 0.062 : 0.05, font: 'martel', style: 'plain' },
+      sub: { y: b * 0.8, size: f.portrait ? 0.032 : 0.027, style: 'plain', opacity: 0.6 },
+    };
+  },
+  setup: () => ({ v: new Float32Array(80), pts: Array.from({ length: 80 }, () => [0, 0]) }),
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    const bh = horizonBand(f);
+    // gentle grade (a colour wash in soft light), made once per photo and colour
+    const key = f.color.accent + f.color.accent2;
+    if (!st.graded || st.src !== f.photo.sharp || st.key !== key) {
+      const src = f.photo.sharp;
+      const c = st.graded || document.createElement('canvas');
+      c.width = src.width; c.height = src.height;
+      const g = c.getContext('2d');
+      g.drawImage(src, 0, 0);
+      g.globalCompositeOperation = 'soft-light';
+      const gg = g.createLinearGradient(0, 0, c.width, c.height);
+      gg.addColorStop(0, rgba(f.color.accent2, 0.5));
+      gg.addColorStop(1, rgba(f.color.accent, 0.5));
+      g.fillStyle = gg;
+      g.fillRect(0, 0, c.width, c.height);
+      st.graded = c; st.src = src; st.key = key;
+    }
+    const z = slowZoom(f, 0.1);
+    drawCover(ctx, st.graded, 0, 0, w, h, z.zoom, z.fx, z.fy);
+    vignette(ctx, f, 0.5);
+    // warm light rising from the bottom on the bass
+    const lg = ctx.createLinearGradient(0, h - bh - s * 0.25, 0, h - bh);
+    lg.addColorStop(0, rgba(f.color.accent, 0));
+    lg.addColorStop(1, rgba(f.color.accent, 0.08 + a.bass * 0.1));
+    ctx.fillStyle = lg;
+    ctx.fillRect(0, h - bh - s * 0.25, w, s * 0.25);
+
+    // the bands
+    ctx.fillStyle = '#050506';
+    ctx.fillRect(0, 0, w, bh);
+    ctx.fillRect(0, h - bh, w, bh);
+
+    // one thin spectrum line in the bottom band
+    const n = st.v.length;
+    const m = mirrored(a.bands, n);
+    const cy = h - bh * 0.5;
+    const half = w * (f.portrait ? 0.4 : 0.32);
+    const amp = bh * 0.42 * (1 + a.kick * 0.12);
+    for (let i = 0; i < n; i++) {
+      const x = i / (n - 1);
+      const v = (m[Math.max(0, i - 1)] + m[i] * 2 + m[Math.min(n - 1, i + 1)]) / 4;
+      st.v[i] = follow(st.v[i], Math.pow(v, 1.3) * Math.pow(Math.sin(Math.PI * x), 1.3), 0.55, 0.1);
+      st.pts[i][0] = w / 2 + (x * 2 - 1) * half;
+      st.pts[i][1] = cy - st.v[i] * amp;
+    }
+    const sg = ctx.createLinearGradient(w / 2 - half, 0, w / 2 + half, 0);
+    sg.addColorStop(0, 'rgba(255,255,255,0)');
+    sg.addColorStop(0.2, shade(f.color.accent, 0.45));
+    sg.addColorStop(0.5, '#ffffff');
+    sg.addColorStop(0.8, shade(f.color.accent, 0.45));
+    sg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // faint mirror below the line
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.translate(0, cy * 2);
+    ctx.scale(1, -1);
+    ctx.beginPath();
+    smoothLine(ctx, st.pts);
+    ctx.strokeStyle = sg;
+    ctx.lineWidth = Math.max(1, s * 0.0018);
+    ctx.stroke();
+    ctx.restore();
+    withGlow(ctx, rgba(f.color.accent, 1), s * 0.016, () => {
+      ctx.beginPath();
+      smoothLine(ctx, st.pts);
+      ctx.strokeStyle = sg;
+      ctx.lineWidth = Math.max(1.6, s * 0.0034);
+      ctx.stroke();
+    });
+  },
+};
+
+export default [
+  softWave, circleRing, classicBars, musicPlayer, vinylRecord, oceanWaves, liquidBlob, pulseLine,
+  silkLines, mirrorBars, liquid, dotWave, aurora, horizon,
+];

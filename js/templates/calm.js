@@ -1,9 +1,9 @@
 // Calm & sad looks: love songs, sad songs, lo-fi and slow ballads.
 // Soft colours and slow movement that still follows the music.
 import {
-  TAU, clamp, lerp, rgba, shade, mirrored, smoothLine, rng, noise1,
+  TAU, clamp, lerp, rgba, shade, mix, mirrored, smoothLine, rng, noise1,
   drawCover, fadeEdge, vignette, roundRect,
-  withGlow, slowZoom, formatTime,
+  withGlow, slowZoom, formatTime, hexToRgb,
 } from '../helpers.js';
 import { fontCss } from '../fonts.js';
 
@@ -96,6 +96,46 @@ function filmGrain(ctx, f, amount) {
   ctx.restore();
 }
 
+// Fast rise, slow fall: things jump with the music and settle gently.
+const follow = (cur, target, up = 0.45, down = 0.06) => lerp(cur, target, target > cur ? up : down);
+
+// Smooth the spectrum into n values with a fast attack and slow release.
+function flow(st, key, f, n, up = 0.5, down = 0.08) {
+  if (!st[key]) st[key] = new Float32Array(n);
+  const arr = st[key];
+  const m = mirrored(f.a.bands, n);
+  for (let i = 0; i < n; i++) arr[i] = follow(arr[i], m[i], up, down);
+  return arr;
+}
+
+// Soft light (leaks, haze) painted with normal blending: an additive blend
+// over big areas is several times slower on phones without a fast GPU path.
+function lightLayer(ctx, st, f, paint) {
+  ctx.save();
+  paint(ctx);
+  ctx.restore();
+}
+
+// A line with a soft glow made of wide faint strokes under the real one.
+// Much cheaper than shadowBlur on a line that spans the whole frame.
+function glowStroke(ctx, pts, core, glow, width) {
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  smoothLine(ctx, pts);
+  ctx.strokeStyle = glow;
+  ctx.globalAlpha = 0.12;
+  ctx.lineWidth = width * 7;
+  ctx.stroke();
+  ctx.globalAlpha = 0.28;
+  ctx.lineWidth = width * 3;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = core;
+  ctx.lineWidth = width;
+  ctx.stroke();
+}
+
 // ---------- Lo-fi ----------
 const lofi = {
   id: 'lofi',
@@ -103,100 +143,132 @@ const lofi = {
   ne: 'लो-फाइ',
   cat: 'calm',
   text: (f) => (f.portrait
-    ? { title: { y: 0.68, font: 'kalam', size: 0.09 }, sub: { y: 0.725, font: 'kalam', size: 0.045, opacity: 0.9 } }
-    : { title: { y: 0.64, font: 'kalam', size: 0.085 }, sub: { y: 0.73, font: 'kalam', size: 0.042, opacity: 0.9 } }),
+    ? { title: { y: 0.66, font: 'kalam', size: 0.09 }, sub: { y: 0.705, font: 'kalam', size: 0.045, opacity: 0.92 } }
+    : { title: { y: 0.6, font: 'kalam', size: 0.085 }, sub: { y: 0.69, font: 'kalam', size: 0.042, opacity: 0.92 } }),
   setup() {
     const r = rng(11);
     const dust = [];
-    for (let i = 0; i < 36; i++) dust.push({ x: r(), y: r(), z: 0.4 + r() * 0.6, ph: r() * TAU });
-    return { dust, bars: new Float32Array(26), eq: [0, 0, 0], leak: glowSprite(128, '255,160,90') };
+    for (let i = 0; i < 40; i++) dust.push({ x: r(), y: r(), z: 0.4 + r() * 0.6, ph: r() * TAU });
+    return {
+      dust, eq: [0, 0, 0], glow: 0,
+      leak: glowSprite(128, '255,170,120', 0.3),
+      leak2: glowSprite(128, '255,140,170', 0.3),
+      mote: glowSprite(32, '255,240,220', 0.3),
+    };
   },
   draw(ctx, f, st) {
     const { w, h, s, a } = f;
-    // warm, faded film tone with lifted blacks
+    // warm peach film tone: lifted, soft shadows instead of grey mud
     backdrop(ctx, f, graded(st, f, 'sharp', (g, gw, gh) => {
-      tint(g, gw, gh, '#ff9450', 'soft-light', 0.6);
-      tint(g, gw, gh, '#000000', 'source-over', 0.06);
-      tint(g, gw, gh, '#33241d', 'lighten');
+      tint(g, gw, gh, '#ff9a5a', 'soft-light', 0.45);
+      tint(g, gw, gh, '#3c1e1c', 'screen', 0.32);
+      tint(g, gw, gh, '#ff9e7a', 'source-over', 0.1);
+      tint(g, gw, gh, '#ffc9a0', 'soft-light', 0.3);
     }), 0.1);
 
-    // a warm light leak drifting along the top, stronger in loud parts
-    const lx = w * (0.5 + 0.42 * Math.sin(f.t * 0.06)), ly = h * (0.06 + 0.06 * Math.cos(f.t * 0.05));
-    const lr = s * 0.6;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.22 + a.energy * 0.25;
-    ctx.drawImage(st.leak, lx - lr, ly - lr, lr * 2, lr * 2);
-    ctx.restore();
+    // two soft light leaks drifting slowly, a little brighter in loud parts
+    st.glow = follow(st.glow, a.level * 0.6 + a.bass * 0.4, 0.3, 0.04);
+    lightLayer(ctx, st, f, (g) => {
+      const lr = s * 0.75;
+      g.globalAlpha = 0.16 + st.glow * 0.14 + a.energy * 0.08;
+      g.drawImage(st.leak, w * (0.88 + 0.08 * Math.sin(f.t * 0.05)) - lr, h * (0.05 + 0.08 * Math.cos(f.t * 0.04)) - lr, lr * 2, lr * 2);
+      g.globalAlpha = 0.1 + st.glow * 0.1;
+      const lr2 = s * 0.6;
+      g.drawImage(st.leak2, w * (0.06 + 0.05 * Math.cos(f.t * 0.06)) - lr2, h * (0.55 + 0.15 * Math.sin(f.t * 0.035)) - lr2, lr2 * 2, lr2 * 2);
+      // soft glow under the little wave
+      const gw = w * (f.portrait ? 0.4 : 0.24), gh = s * 0.09;
+      g.globalAlpha = 0.12 + st.glow * 0.18;
+      g.drawImage(st.leak, w / 2 - gw, h * (f.portrait ? 0.79 : 0.82) - gh, gw * 2, gh * 2);
+    });
 
-    // edge fade, vignette and the cosy rounded frame never move: one layer
-    const ins = s * 0.026;
+    // warm edge fade and vignette, painted once
     ctx.drawImage(still(st, f, (g) => {
-      fadeEdge(g, f, 'bottom', 0.55, 0.72, '#140c08');
-      vignette(g, f, 0.5);
-      g.fillStyle = '#1c130f';
-      roundRect(g, ins, ins, w - ins * 2, h - ins * 2, s * 0.05);
-      g.rect(0, 0, w, h);
-      g.fill('evenodd');
+      fadeEdge(g, f, 'bottom', 0.55, 0.6, '#2a130c');
+      const v = g.createRadialGradient(w / 2, h * 0.45, s * 0.35, w / 2, h * 0.45, Math.hypot(w, h) * 0.62);
+      v.addColorStop(0, 'rgba(40,16,12,0)');
+      v.addColorStop(1, 'rgba(40,16,12,0.5)');
+      g.fillStyle = v;
+      g.fillRect(0, 0, w, h);
     }), 0, 0);
 
-    // dust floating slowly in the light
-    ctx.fillStyle = '#fff1dc';
+    // dust motes floating in the light, sparkling with the high notes
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     for (const d of st.dust) {
       d.x += f.dt * 0.008 * d.z;
       d.y -= f.dt * 0.005 * d.z;
       if (d.x > 1.02) d.x -= 1.04;
       if (d.y < -0.02) d.y += 1.04;
-      ctx.globalAlpha = clamp((0.18 + 0.2 * Math.sin(f.t * 0.8 + d.ph)) * d.z + a.high * 0.25);
-      ctx.beginPath();
-      ctx.arc(d.x * w, d.y * h, s * 0.0028 * d.z, 0, TAU);
-      ctx.fill();
+      ctx.globalAlpha = clamp((0.25 + 0.25 * Math.sin(f.t * 0.8 + d.ph)) * d.z + a.high * 0.3);
+      const rr = s * 0.009 * d.z;
+      ctx.drawImage(st.mote, d.x * w - rr, d.y * h - rr, rr * 2, rr * 2);
     }
-    ctx.globalAlpha = 1;
+    ctx.restore();
 
-    // small rounded wave: soft pill-shaped bars
-    const n = st.bars.length;
-    const m = mirrored(a.bands, n);
-    const bw = w * (f.portrait ? 0.62 : 0.34);
+    // small wave of soft rounded bars with a faint reflection, rolling gently
+    const n = 31;
+    const v = flow(st, 'wave', f, n, 0.55, 0.09);
+    const bw = w * (f.portrait ? 0.66 : 0.36);
     const x0 = (w - bw) / 2, step = bw / (n - 1);
-    const cy = h * (f.portrait ? 0.795 : 0.845);
-    const maxH = s * (f.portrait ? 0.08 : 0.085);
-    ctx.lineCap = 'round';
-    ctx.lineWidth = step * 0.52;
-    ctx.strokeStyle = 'rgba(255,240,222,0.95)';
+    const cy = h * (f.portrait ? 0.8 : 0.835);
+    const maxH = s * (f.portrait ? 0.075 : 0.08) * (1 + a.kick * 0.06);
+    const peach = mix(f.color.accent, '#ffc6a0', 0.6);
+    const bar = step * 0.55;
+    const tops = [];
+    for (let i = 0; i < n; i++) {
+      const u = i / (n - 1);
+      const taper = 0.25 + 0.75 * Math.pow(Math.sin(Math.PI * u), 0.7);
+      const roll = 0.8 + 0.2 * Math.sin(u * 12 - f.t * 2.4);
+      tops.push(Math.max(bar, maxH * v[i] * taper * roll));
+    }
+    // reflection under the line
+    ctx.fillStyle = rgba(peach, 0.22);
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
-      st.bars[i] = lerp(st.bars[i], m[i], 0.3);
-      const taper = 0.3 + 0.7 * Math.sqrt(Math.sin(Math.PI * (i / (n - 1))));
-      const hh = maxH * (0.06 + st.bars[i] * taper * (1 + a.kick * 0.1));
-      const x = x0 + i * step;
-      ctx.moveTo(x, cy - hh / 2);
-      ctx.lineTo(x, cy + hh / 2);
+      const hh = tops[i] * 0.35;
+      roundRect(ctx, x0 + i * step - bar / 2, cy + s * 0.008, bar, Math.max(bar, hh), bar / 2);
+      ctx.fill();
     }
-    ctx.stroke();
+    const grad = ctx.createLinearGradient(0, cy - maxH, 0, cy);
+    grad.addColorStop(0, '#fff6ea');
+    grad.addColorStop(1, shade(peach, 0.1));
+    {
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = x0 + i * step - bar / 2;
+        ctx.moveTo(x, cy - tops[i] + bar / 2);
+        ctx.arc(x + bar / 2, cy - tops[i] + bar / 2, bar / 2, -Math.PI, 0);
+        ctx.lineTo(x + bar, cy);
+        ctx.lineTo(x, cy);
+        ctx.closePath();
+      }
+      ctx.fill();
+    }
 
     // progress line with times, like a little music player
-    const py = cy + s * 0.075;
+    const py = cy + s * 0.08;
     const lw = Math.max(1.5, s * 0.004);
+    ctx.lineCap = 'round';
     ctx.lineWidth = lw;
-    ctx.strokeStyle = 'rgba(255,240,222,0.3)';
+    ctx.strokeStyle = 'rgba(255,240,226,0.3)';
     ctx.beginPath();
     ctx.moveTo(x0, py);
     ctx.lineTo(x0 + bw, py);
     ctx.stroke();
     const px = x0 + bw * clamp(f.progress);
-    ctx.strokeStyle = 'rgba(255,240,222,0.9)';
+    ctx.strokeStyle = 'rgba(255,240,226,0.9)';
     ctx.beginPath();
     ctx.moveTo(x0, py);
     ctx.lineTo(px, py);
     ctx.stroke();
-    ctx.fillStyle = '#fff0dc';
+    ctx.fillStyle = '#fff2e4';
     ctx.beginPath();
     ctx.arc(px, py, lw * 2.2, 0, TAU);
     ctx.fill();
     ctx.font = fontCss('mukta', s * 0.026, 500);
     ctx.textBaseline = 'middle';
-    ctx.globalAlpha = 0.8;
+    ctx.globalAlpha = 0.85;
     ctx.textAlign = 'right';
     ctx.fillText(formatTime(f.t), x0 - s * 0.025, py);
     ctx.textAlign = 'left';
@@ -210,27 +282,27 @@ const lofi = {
     const tw = ctx.measureText(label).width;
     const ph = fs * 1.75, icon = fs * 1.05;
     const pw = tw + icon + fs * 1.9;
-    const bx = ins + s * 0.035, by = ins + s * 0.035;
+    const bx = s * 0.05, by = s * 0.05;
     roundRect(ctx, bx, by, pw, ph, ph / 2);
-    ctx.fillStyle = 'rgba(28,18,14,0.6)';
+    ctx.fillStyle = 'rgba(46,22,16,0.38)';
     ctx.fill();
     ctx.lineWidth = Math.max(1, s * 0.0018);
-    ctx.strokeStyle = 'rgba(255,230,200,0.3)';
+    ctx.strokeStyle = 'rgba(255,236,220,0.45)';
     ctx.stroke();
     const lv = [a.bass, a.mid * 1.3, a.high * 2];
     const ew = icon / 4.2;
-    ctx.fillStyle = shade(f.color.accent, 0.35);
+    ctx.fillStyle = shade(peach, 0.2);
     for (let i = 0; i < 3; i++) {
-      st.eq[i] = lerp(st.eq[i], clamp(lv[i]), 0.35);
+      st.eq[i] = follow(st.eq[i], clamp(lv[i]), 0.5, 0.15);
       const eh = ph * (0.18 + 0.45 * st.eq[i]);
       roundRect(ctx, bx + fs * 0.75 + i * ew * 1.6, by + ph / 2 + ph * 0.3 - eh, ew, eh, ew / 2);
       ctx.fill();
     }
-    ctx.fillStyle = '#fff0dc';
+    ctx.fillStyle = '#fff3e6';
     ctx.textAlign = 'left';
     ctx.fillText(label, bx + fs * 1.1 + icon, by + ph / 2 + fs * 0.06);
 
-    filmGrain(ctx, f, 0.09);
+    filmGrain(ctx, f, 0.035);
   },
 };
 
@@ -765,4 +837,444 @@ const polaroid = {
   },
 };
 
-export default [lofi, rain, nightStars, bokeh, polaroid];
+// ---------- Golden Hour ----------
+// Soft ring for the little lens-flare ghosts.
+function ringSprite(size = 128, rgb = '255,220,170') {
+  const c = makeCanvas(size, size);
+  const g = c.getContext('2d');
+  const r = size / 2;
+  const gr = g.createRadialGradient(r, r, 0, r, r, r);
+  gr.addColorStop(0, `rgba(${rgb},0.12)`);
+  gr.addColorStop(0.7, `rgba(${rgb},0.22)`);
+  gr.addColorStop(0.86, `rgba(${rgb},0.55)`);
+  gr.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = gr;
+  g.fillRect(0, 0, size, size);
+  return c;
+}
+
+const goldenHour = {
+  id: 'golden-hour',
+  name: 'Golden Hour',
+  ne: 'साँझको घाम',
+  cat: 'calm',
+  text: (f) => (f.portrait
+    ? { title: { y: 0.62, font: 'rozha', size: 0.1 }, sub: { y: 0.665, font: 'mukta', size: 0.042 } }
+    : { title: { y: 0.6, font: 'rozha', size: 0.092 }, sub: { y: 0.69, font: 'mukta', size: 0.04 } }),
+  setup() {
+    return {
+      sun: 0, warm: 0,
+      haze: glowSprite(256, '255,190,110', 0.15),
+      core: glowSprite(128, '255,246,225', 0.2),
+      leak: glowSprite(128, '255,140,60', 0.35),
+      leak2: glowSprite(128, '255,110,120', 0.35),
+      ring: ringSprite(128, '255,214,160'),
+      disc: glowSprite(64, '255,200,140', 0.5),
+    };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    // warm golden grade with honey-coloured shadows
+    backdrop(ctx, f, graded(st, f, 'sharp', (g, gw, gh) => {
+      tint(g, gw, gh, '#ff9d3a', 'soft-light', 0.5);
+      tint(g, gw, gh, '#3a1c0c', 'screen', 0.35);
+      tint(g, gw, gh, '#ff9a48', 'source-over', 0.14);
+      tint(g, gw, gh, '#ffe2b0', 'soft-light', 0.25);
+    }), 0.1);
+    ctx.drawImage(still(st, f, (g) => {
+      fadeEdge(g, f, 'bottom', 0.5, 0.7, '#2a1206');
+      vignette(g, f, 0.35);
+    }), 0, 0);
+
+    st.sun = follow(st.sun, a.bass * 0.55 + a.level * 0.45, 0.35, 0.04);
+    st.warm = follow(st.warm, a.energy, 0.05, 0.02);
+    const sx = w * (f.portrait ? 0.74 : 0.8) + s * 0.05 * Math.sin(f.t * 0.05);
+    const sy = h * (f.portrait ? 0.13 : 0.17) + s * 0.03 * Math.cos(f.t * 0.04);
+
+    // light leaks drifting in from the side and the corner, and the sun haze
+    lightLayer(ctx, st, f, (g) => {
+      const l1 = s * 0.85;
+      g.globalAlpha = 0.14 + st.warm * 0.18 + st.sun * 0.06;
+      g.drawImage(st.leak, w * (0.02 + 0.05 * Math.sin(f.t * 0.06)) - l1, h * (0.3 + 0.2 * Math.sin(f.t * 0.04)) - l1, l1 * 2, l1 * 2);
+      const l2 = s * 0.55;
+      g.globalAlpha = 0.1 + st.warm * 0.12;
+      g.drawImage(st.leak2, w * (0.98 - 0.04 * Math.cos(f.t * 0.05)) - l2, h * (0.75 + 0.1 * Math.sin(f.t * 0.03)) - l2, l2 * 2, l2 * 2);
+      const hr = s * (0.75 + st.sun * 0.2);
+      g.globalAlpha = 0.3 + st.sun * 0.25;
+      g.drawImage(st.haze, sx - hr, sy - hr, hr * 2, hr * 2);
+    });
+
+    // the bright sun core, a thin horizontal streak and the flare ghosts
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const cr = s * (0.11 + st.sun * 0.03);
+    ctx.globalAlpha = 0.75;
+    ctx.drawImage(st.core, sx - cr, sy - cr, cr * 2, cr * 2);
+    const sw = s * (0.9 + st.sun * 0.4), sh = s * 0.02;
+    ctx.globalAlpha = 0.22 + st.sun * 0.25;
+    ctx.drawImage(st.core, sx - sw, sy - sh, sw * 2, sh * 2);
+
+    // flare ghosts on the line from the sun through the middle
+    const cx = w / 2, cy = h / 2;
+    const ghosts = [[0.35, 0.04, st.disc, 0.3], [0.62, 0.08, st.ring, 0.28], [1.5, 0.035, st.disc, 0.3], [1.8, 0.12, st.ring, 0.16]];
+    for (const [k, size, img, al] of ghosts) {
+      const gx = sx + (cx - sx) * k, gy = sy + (cy - sy) * k;
+      const gr = s * size * (1 + st.sun * 0.15);
+      ctx.globalAlpha = al * (0.5 + st.sun * 0.7);
+      ctx.drawImage(img, gx - gr, gy - gr, gr * 2, gr * 2);
+    }
+    ctx.restore();
+
+    // soft golden wave rising from the bottom edge
+    const n = 60;
+    const v = flow(st, 'wave', f, n, 0.5, 0.08);
+    const ec = flow(st, 'echo', f, n, 0.1, 0.025);
+    const base = h - s * 0.02;
+    const amp = s * (f.portrait ? 0.2 : 0.18) * (1 + a.kick * 0.08);
+    const crest = (arr, k, ph) => {
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const u = i / (n - 1);
+        const roll = 0.85 + 0.15 * Math.sin(u * 9 - f.t * 1.4 + ph);
+        pts.push([u * w, base - amp * k * (0.08 + arr[i] * roll) * (0.35 + 0.65 * Math.sin(Math.PI * u))]);
+      }
+      return pts;
+    };
+    const fillUnder = (pts, style) => {
+      ctx.beginPath();
+      smoothLine(ctx, pts);
+      ctx.lineTo(w, h);
+      ctx.lineTo(0, h);
+      ctx.closePath();
+      ctx.fillStyle = style;
+      ctx.fill();
+    };
+    const gold = mix(f.color.accent, '#ffb43c', 0.75);
+    fillUnder(crest(ec, 1.3, 2), rgba(gold, 0.22));
+    const top = crest(v, 1, 0);
+    const fg = ctx.createLinearGradient(0, base - amp * 0.6, 0, h);
+    fg.addColorStop(0, rgba(shade(gold, 0.45), 0.3));
+    fg.addColorStop(0.55, rgba(shade(gold, 0.15), 0.55));
+    fg.addColorStop(1, rgba(gold, 0.75));
+    fillUnder(top, fg);
+    glowStroke(ctx, top, 'rgba(255,246,226,0.95)', rgba(shade(gold, 0.2), 1), Math.max(1.5, s * 0.004));
+  },
+};
+
+// ---------- Fireflies ----------
+const fireflies = {
+  id: 'fireflies',
+  name: 'Fireflies',
+  ne: 'जुनकिरी',
+  cat: 'calm',
+  text: (f) => (f.portrait
+    ? { title: { y: 0.3, font: 'martel', size: 0.085, style: 'glow', color: '#fff4dc' }, sub: { y: 0.345, font: 'mukta', size: 0.04 } }
+    : { title: { y: 0.36, font: 'martel', size: 0.08, style: 'glow', color: '#fff4dc' }, sub: { y: 0.445, font: 'mukta', size: 0.038 } }),
+  setup() {
+    const r = rng(17);
+    const flies = [];
+    for (let i = 0; i < 80; i++) {
+      const far = i < 50;
+      flies.push({
+        x: r(), y: 0.5 + Math.pow(r(), 0.8) * 0.46, ph: r() * 50, sp: 0.6 + r() * 1.6,
+        size: far ? 0.0022 + r() * 0.002 : 0.004 + r() * 0.003, b: 4 + Math.floor(r() * 54), v: 0,
+        far, warm: r() < 0.7,
+      });
+    }
+    return {
+      flies,
+      glowW: glowSprite(64, '255,214,120', 0.15),
+      glowG: glowSprite(64, '214,255,140', 0.15),
+      core: glowSprite(32, '255,252,230', 0.45),
+      ground: 0,
+    };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    // evening dusk grade so the lights stand out
+    backdrop(ctx, f, graded(st, f, 'sharp', (g, gw, gh) => {
+      tint(g, gw, gh, '#000000', 'source-over', 0.22);
+      tint(g, gw, gh, '#2c4a70', 'soft-light', 0.45);
+      tint(g, gw, gh, '#3a2a40', 'screen', 0.25);
+    }), 0.08);
+    ctx.drawImage(still(st, f, (g) => {
+      fadeEdge(g, f, 'bottom', 0.6, 0.85, '#05080d');
+      fadeEdge(g, f, 'top', 0.25, 0.3, '#05080d');
+      vignette(g, f, 0.45);
+    }), 0, 0);
+
+    // warm glow rising from the ground with the music
+    st.ground = follow(st.ground, a.level * 0.7 + a.bass * 0.3, 0.3, 0.04);
+    const gy = h * 0.72;
+    const gg = ctx.createLinearGradient(0, gy, 0, h);
+    gg.addColorStop(0, 'rgba(255,190,90,0)');
+    gg.addColorStop(1, `rgba(255,180,80,${0.08 + st.ground * 0.1})`);
+    ctx.fillStyle = gg;
+    ctx.fillRect(0, gy, w, h - gy);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of st.flies) {
+      // wander on a slow, lazy path
+      p.x += noise1(f.t * 0.25 + p.ph, 1) * f.dt * 0.02;
+      p.y += noise1(f.t * 0.2 + p.ph, 2) * f.dt * 0.012 - f.dt * 0.002;
+      if (p.x < -0.03) p.x += 1.06;
+      if (p.x > 1.03) p.x -= 1.06;
+      if (p.y < 0.48) p.y = 0.48;
+      if (p.y > 0.98) p.y = 0.98;
+      // each one listens to its own part of the spectrum
+      p.v = follow(p.v, clamp((a.bands[p.b] - 0.15) * 1.6), 0.4, 0.05);
+      const blink = 0.5 + 0.5 * Math.sin(f.t * p.sp + p.ph);
+      const al = clamp(0.12 + 0.35 * blink * blink + p.v * 0.75);
+      const x = p.x * w, y = p.y * h;
+      const rr = p.size * s * (1 + p.v * 0.6);
+      const halo = rr * (p.far ? 4.5 : 6);
+      ctx.globalAlpha = al * 0.75;
+      ctx.drawImage(p.warm ? st.glowW : st.glowG, x - halo, y - halo, halo * 2, halo * 2);
+      ctx.globalAlpha = al;
+      ctx.drawImage(st.core, x - rr * 1.6, y - rr * 1.6, rr * 3.2, rr * 3.2);
+    }
+    ctx.restore();
+
+    // thin wave line near the bottom with a faint reflection below it
+    const n = 64;
+    const v = flow(st, 'wave', f, n, 0.5, 0.08);
+    const cy = h * (f.portrait ? 0.9 : 0.885);
+    const amp = s * 0.1;
+    const up = [], down = [];
+    for (let i = 0; i < n; i++) {
+      const u = i / (n - 1);
+      const taper = Math.pow(Math.sin(Math.PI * u), 1.2);
+      const d = (0.03 + v[i] * (0.8 + 0.2 * Math.sin(u * 14 - f.t * 2))) * taper * amp;
+      up.push([u * w, cy - d]);
+      down.push([u * w, cy + d * 0.4]);
+    }
+    const lineCol = mix(f.color.accent, '#ffe2a0', 0.6);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    smoothLine(ctx, down);
+    ctx.lineWidth = Math.max(1, s * 0.002);
+    ctx.strokeStyle = rgba(lineCol, 0.3);
+    ctx.stroke();
+    glowStroke(ctx, up, 'rgba(255,248,228,0.95)', rgba(lineCol, 1), Math.max(1.2, s * 0.003));
+  },
+};
+
+// ---------- Floating Frame ----------
+// Where the framed photo sits. Shared by text() and draw().
+function frameBox(f) {
+  const { w, h, s } = f;
+  let fw, fh, cy;
+  if (f.portrait) {
+    fw = w * 0.8; fh = Math.min(fw * 1.25, h * 0.56); cy = h * 0.39;
+  } else if (f.square) {
+    fw = fh = s * 0.56; cy = h * 0.37;
+  } else {
+    fh = h * 0.58; fw = fh * 1.36; cy = h * 0.385;
+  }
+  const bottom = cy + fh / 2;
+  const waveY = bottom + s * (f.portrait ? 0.075 : 0.065);
+  return { cx: w / 2, cy, fw, fh, top: cy - fh / 2, bottom, waveY, r: s * 0.03 };
+}
+
+const floatingFrame = {
+  id: 'frame',
+  name: 'Floating Frame',
+  ne: 'तैरिने फ्रेम',
+  cat: 'calm',
+  text(f) {
+    const b = frameBox(f);
+    const ty = b.waveY + f.s * (f.portrait ? 0.14 : 0.1);
+    return {
+      title: { y: ty / f.h, font: 'martel', size: f.portrait ? 0.075 : 0.062 },
+      sub: { y: (ty + f.s * (f.portrait ? 0.08 : 0.07)) / f.h, font: 'mukta', size: 0.034 },
+    };
+  },
+  setup() {
+    // soft shadow drawn once, small, then stretched under the frame
+    const shadow = makeCanvas(140, 140);
+    const g = shadow.getContext('2d');
+    g.shadowColor = '#000000';
+    g.shadowBlur = 14;
+    g.fillStyle = '#000000';
+    roundRect(g, 25, 25, 90, 90, 8);
+    g.fill();
+    return { shadow, glow: 0, lift: 0 };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    // the photo's own blurred extension, softly graded
+    backdrop(ctx, f, graded(st, f, 'blur', (g, gw, gh) => {
+      tint(g, gw, gh, '#000000', 'source-over', 0.2);
+      tint(g, gw, gh, '#ffb48c', 'soft-light', 0.3);
+    }), 0.16);
+    ctx.drawImage(still(st, f, (g) => vignette(g, f, 0.5)), 0, 0);
+
+    const b = frameBox(f);
+    st.glow = follow(st.glow, a.bass * 0.6 + a.level * 0.4, 0.3, 0.04);
+    st.lift = follow(st.lift, a.kick, 0.5, 0.08);
+
+    // a soft colour glow behind the frame that breathes with the bass
+    if (st.haloCol !== f.color.accent) {
+      st.haloCol = f.color.accent;
+      st.halo = glowSprite(128, hexToRgb(shade(f.color.accent, 0.2)).join(','), 0.4);
+    }
+    const gr = Math.max(b.fw, b.fh) * (0.85 + st.glow * 0.25);
+    ctx.globalAlpha = 0.42 + st.glow * 0.3;
+    ctx.drawImage(st.halo, b.cx - gr, b.cy - gr, gr * 2, gr * 2);
+    ctx.globalAlpha = 1;
+
+    // the frame floats up and down slowly and lifts a touch on a kick
+    const dy = Math.sin(f.t * 0.6) * s * 0.008 - st.lift * s * 0.004;
+    const sc = 1 + st.glow * 0.012;
+    const fw = b.fw * sc, fh = b.fh * sc;
+    const x = b.cx - fw / 2, y = b.cy - fh / 2 + dy;
+    const pad = fw * 0.16;
+    ctx.globalAlpha = 0.5 - dy / s * 4;
+    ctx.drawImage(st.shadow, x - pad, y - pad + s * 0.022, fw + pad * 2, fh + pad * 2);
+    ctx.globalAlpha = 1;
+    const z = slowZoom(f, 0.07);
+    ctx.save();
+    roundRect(ctx, x, y, fw, fh, b.r);
+    ctx.clip();
+    drawCover(ctx, f.photo.sharp, x, y, fw, fh, z.zoom, z.fx, z.fy);
+    // soft sheen across the top
+    const sheen = ctx.createLinearGradient(0, y, 0, y + fh);
+    sheen.addColorStop(0, 'rgba(255,255,255,0.1)');
+    sheen.addColorStop(0.4, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(x, y, fw, fh);
+    ctx.restore();
+    roundRect(ctx, x, y, fw, fh, b.r);
+    ctx.lineWidth = Math.max(1, s * 0.002);
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    ctx.stroke();
+
+    // thin line wave under the frame, with a slow faint echo
+    const n = 48;
+    const v = flow(st, 'wave', f, n, 0.5, 0.08);
+    const ec = flow(st, 'echo', f, n, 0.1, 0.03);
+    const ww = f.portrait ? w * 0.72 : b.fw * 0.9;
+    const x0 = b.cx - ww / 2;
+    const amp = s * (f.portrait ? 0.05 : 0.04);
+    const line = (arr, k, ph) => {
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const u = i / (n - 1);
+        const taper = Math.pow(Math.sin(Math.PI * u), 1.1);
+        pts.push([x0 + u * ww, b.waveY + Math.sin(i * 0.62 - f.t * 2.2 + ph) * (0.06 + arr[i]) * taper * amp * k]);
+      }
+      return pts;
+    };
+    const lc = mix(f.color.accent, '#ffffff', 0.55);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    smoothLine(ctx, line(ec, 1.3, 1.4));
+    ctx.lineWidth = Math.max(1, s * 0.0018);
+    ctx.strokeStyle = rgba(lc, 0.35);
+    ctx.stroke();
+    const lg = ctx.createLinearGradient(x0, 0, x0 + ww, 0);
+    lg.addColorStop(0, rgba(lc, 0));
+    lg.addColorStop(0.2, 'rgba(255,255,255,0.95)');
+    lg.addColorStop(0.8, 'rgba(255,255,255,0.95)');
+    lg.addColorStop(1, rgba(lc, 0));
+    glowStroke(ctx, line(v, 1, 0), lg, rgba(lc, 0.9), Math.max(1.2, s * 0.003));
+    filmGrain(ctx, f, 0.025);
+  },
+};
+
+// ---------- Ink Wave ----------
+const PAPER = '#f5eee4';
+
+const inkWave = {
+  id: 'ink',
+  name: 'Ink Wave',
+  ne: 'मसीको तरंग',
+  cat: 'calm',
+  text: (f) => (f.portrait
+    ? { title: { y: 0.755, font: 'kalam', size: 0.085, color: '#25212b', style: 'plain' }, sub: { y: 0.795, font: 'kalam', size: 0.04, color: '#4b4450', style: 'plain' } }
+    : { title: { y: 0.71, font: 'kalam', size: 0.08, color: '#25212b', style: 'plain' }, sub: { y: 0.785, font: 'kalam', size: 0.038, color: '#4b4450', style: 'plain' } }),
+  setup() {
+    const r = rng(29);
+    const jit = new Float32Array(80);
+    for (let i = 0; i < jit.length; i++) jit[i] = r() * 2 - 1;
+    return { jit, press: 0 };
+  },
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    // soft, airy light grade
+    backdrop(ctx, f, graded(st, f, 'sharp', (g, gw, gh) => {
+      tint(g, gw, gh, '#fff1e0', 'soft-light', 0.45);
+      tint(g, gw, gh, '#5a5060', 'screen', 0.35);
+      tint(g, gw, gh, PAPER, 'source-over', 0.1);
+    }), 0.08);
+    // the lower part fades into warm paper, so the ink has a clean page
+    ctx.drawImage(still(st, f, (g) => {
+      const y0 = h * (f.portrait ? 0.56 : 0.48);
+      const pg = g.createLinearGradient(0, y0, 0, h);
+      pg.addColorStop(0, rgba(PAPER, 0));
+      pg.addColorStop(0.4, rgba(PAPER, 0.8));
+      pg.addColorStop(0.7, rgba(PAPER, 0.94));
+      pg.addColorStop(1, rgba(PAPER, 0.97));
+      g.fillStyle = pg;
+      g.fillRect(0, y0, w, h - y0);
+      fadeEdge(g, f, 'top', 0.22, 0.25, PAPER);
+    }), 0, 0);
+
+    // the brush stroke: a wave whose width swells with the music
+    const n = 72;
+    const v = flow(st, 'wave', f, n, 0.5, 0.08);
+    const ec = flow(st, 'echo', f, n, 0.1, 0.025);
+    st.press = follow(st.press, a.level * 0.6 + a.bass * 0.4, 0.35, 0.05);
+    const ink = mix(f.color.accent, '#16141e', 0.78);
+    const x0 = w * (f.portrait ? 0.08 : 0.1), x1 = w * (f.portrait ? 0.92 : 0.9);
+    const cy = h * (f.portrait ? 0.875 : 0.895);
+    const amp = s * 0.06;
+    const thick = s * (f.portrait ? 0.022 : 0.02);
+    const stroke = (arr, k, ph, wk) => {
+      const top = [], bot = [], mid = [];
+      for (let i = 0; i < n; i++) {
+        const u = i / (n - 1);
+        // brush lands heavy on the left and lifts off to the right
+        const press = Math.pow(Math.sin(Math.PI * Math.pow(u, 0.75)), 0.7);
+        const yy = cy + Math.sin(u * 10.5 - f.t * 1.8 + ph) * (0.15 + arr[i]) * amp * k * (0.4 + 0.6 * press);
+        const hw = thick * wk * press * (0.35 + arr[i] * 0.9 + st.press * 0.3) * (1 + st.jit[i] * 0.08);
+        const x = lerp(x0, x1, u);
+        top.push([x, yy - hw]);
+        bot.push([x, yy + hw * 0.8]);
+        mid.push([x, yy, hw]);
+      }
+      ctx.beginPath();
+      smoothLine(ctx, top);
+      smoothLine(ctx, bot.reverse(), false);
+      ctx.closePath();
+      return mid;
+    };
+    // pale wash behind, like ink bleeding into the paper
+    stroke(ec, 1.15, 0.6, 1.7);
+    ctx.fillStyle = rgba(ink, 0.12);
+    ctx.fill();
+    const mid = stroke(v, 1, 0, 1);
+    ctx.fillStyle = rgba(ink, 0.92);
+    ctx.fill();
+    // dry-brush streaks of paper showing through near the end of the stroke
+    ctx.strokeStyle = rgba(PAPER, 0.55);
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(1, s * 0.0016);
+    for (const off of [-0.45, 0.1, 0.5]) {
+      ctx.beginPath();
+      const pts = [];
+      for (let i = Math.floor(n * 0.62); i < n - 2; i++) pts.push([mid[i][0], mid[i][1] + mid[i][2] * off]);
+      smoothLine(ctx, pts);
+      ctx.stroke();
+    }
+    // a small ink dot where the brush lifted
+    const last = mid[n - 1];
+    ctx.fillStyle = rgba(ink, 0.85);
+    ctx.beginPath();
+    ctx.arc(last[0] + s * 0.022, last[1] - s * 0.004, s * (0.0045 + st.press * 0.002), 0, TAU);
+    ctx.fill();
+  },
+};
+
+export default [lofi, goldenHour, fireflies, floatingFrame, rain, nightStars, bokeh, polaroid, inkWave];

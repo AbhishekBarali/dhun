@@ -1,7 +1,8 @@
-// Dance & party looks: neon, lasers, confetti. Loud colour, driven by the beat.
+// Dance & party looks: neon, club lights, lasers. Clean shapes driven by the beat.
 import {
   TAU, clamp, lerp, rng, noise1, rgba, mix, shade, hexToRgb, rgbToHex, resample,
-  photoBackground, drawCover, fadeEdge, vignette, roundRect,
+  mirrored, smoothLine, smoothLoop, photoBackground, drawCover, circlePhoto,
+  fadeEdge, vignette, roundRect,
 } from '../helpers.js';
 
 // ---------- colour ----------
@@ -396,246 +397,592 @@ const synthwave = {
   },
 };
 
-// ---------- 4. Confetti ----------
-const CONF = 320;
-const confetti = {
-  id: 'confetti',
-  name: 'Confetti',
-  ne: 'कन्फेटी',
+// Fast rise, slower fall, so bars and waves jump with a hit and settle gently.
+const follow = (cur, target, up = 0.6, down = 0.16) => lerp(cur, target, target > cur ? up : down);
+
+// Adds a rounded bar to the current path (no beginPath), so many bars can be
+// filled with one call.
+function addPill(ctx, x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// A small soft cloud texture (white, alpha = density), made once.
+let hazeCanvas = null;
+function hazeTile() {
+  if (hazeCanvas) return hazeCanvas;
+  const W = 160, H = 96;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const d = g.createImageData(W, H);
+  const R = rng(23);
+  const waves = [];
+  for (let k = 0; k < 7; k++) {
+    const an = R() * TAU, fr = 0.025 + R() * 0.06;
+    waves.push([Math.cos(an) * fr, Math.sin(an) * fr, R() * TAU]);
+  }
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let v = 0;
+      for (const wv of waves) v += Math.sin(x * wv[0] + y * wv[1] + wv[2]);
+      v = clamp(0.5 + v / 5);
+      const i = (y * W + x) * 4;
+      d.data[i] = d.data[i + 1] = d.data[i + 2] = 255;
+      d.data[i + 3] = Math.round((0.28 + 0.72 * v * v) * 255);
+    }
+  }
+  g.putImageData(d, 0, 0);
+  hazeCanvas = c;
+  return c;
+}
+
+// ---------- 4. Club Lights ----------
+const club = {
+  id: 'club',
+  name: 'Club Lights',
+  ne: 'क्लब बत्ती',
   cat: 'dance',
   text: (f) => ({
-    title: { y: f.portrait ? 0.13 : 0.13, font: 'baloo', style: 'glow', size: 0.085 },
-    sub: { y: f.portrait ? 0.18 : 0.215, font: 'monoton', style: 'glow', color: 'accent', size: 0.05, opacity: 1 },
+    title: { y: f.portrait ? 0.42 : 0.44, font: 'teko', style: 'glow', size: f.portrait ? 0.1 : 0.09, upper: true },
+    sub: { y: f.portrait ? 0.47 : 0.535, font: 'monoton', style: 'glow', color: 'accent', size: 0.046, opacity: 1 },
   }),
-  setup: () => {
-    const F = () => new Float32Array(CONF);
-    return {
-      r: rng(11), x: F(), y: F(), vx: F(), vy: F(), rot: F(), vr: F(), flip: F(), vf: F(),
-      sz: F(), col: new Uint8Array(CONF), kind: new Uint8Array(CONF), on: new Uint8Array(CONF),
-      next: 0, burst: 0, drip: 0,
-    };
+  setup: () => ({ ang: new Float32Array(8), bars: new Float32Array(64), layer: null }),
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    const cols = neon(f, st);
+    const floorY = h * (f.portrait ? 0.86 : 0.84);
+    photoBackground(ctx, f, { dim: 0.5, zoom: 0.08, punch: 0.008 });
+    shadeLayer(ctx, f, st, (g, sf) => {
+      const fy = sf.h * (sf.portrait ? 0.86 : 0.84);
+      fadeEdge(g, sf, 'top', 0.35, 0.55);
+      // dark floor for the bars
+      const fg = g.createLinearGradient(0, fy - sf.s * 0.32, 0, sf.h);
+      fg.addColorStop(0, 'rgba(0,0,0,0)');
+      fg.addColorStop(0.55, 'rgba(2,1,6,0.82)');
+      fg.addColorStop(1, 'rgba(2,1,6,0.95)');
+      g.fillStyle = fg;
+      g.fillRect(0, fy - sf.s * 0.32, sf.w, sf.h);
+      // calm patch where the words sit
+      const tx = sf.w / 2, ty = sf.h * (sf.portrait ? 0.44 : 0.48), tr = sf.s * 0.45;
+      const dk = g.createRadialGradient(tx, ty, 0, tx, ty, tr);
+      dk.addColorStop(0, 'rgba(0,0,0,0.35)');
+      dk.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = dk;
+      g.fillRect(0, 0, sf.w, sf.h);
+      vignette(g, sf, 0.55);
+    });
+
+    // spotlights, drawn small and stretched up (soft for free), masked by haze
+    const q = 4;
+    const lw = Math.max(2, Math.round(w / q)), lh = Math.max(2, Math.round(h / q));
+    if (!st.layer || st.layer.width !== lw || st.layer.height !== lh) {
+      st.layer = document.createElement('canvas');
+      st.layer.width = lw; st.layer.height = lh;
+    }
+    const g = st.layer.getContext('2d');
+    g.globalCompositeOperation = 'source-over';
+    g.clearRect(0, 0, lw, lh);
+    g.globalCompositeOperation = 'lighter';
+
+    const nb = f.portrait ? 4 : f.square ? 5 : 6;
+    // every 8 beats the heads move to a new pattern: sweep, meet, cross
+    const mode = Math.floor(a.beats / 8) % 3;
+    const swap = Math.floor(a.beats / 16) % 2;
+    const fy = floorY / q, sy = -s * 0.03 / q;
+    const half = 0.075 + a.energy * 0.03 + a.beat * 0.012;
+    const bright = (f.portrait ? 0.27 : 0.32) + a.energy * 0.14 + a.beat * 0.08;
+    const heads = [];
+    for (let i = 0; i < nb; i++) {
+      const sx = (w * (i + 0.5)) / nb / q;
+      const side = i - (nb - 1) / 2;
+      let target;
+      if (mode === 0) target = Math.sin(f.t * 0.75 + i * 1.1) * 0.38;
+      else if (mode === 1) target = Math.atan2(w / 2 / q - sx, fy - sy) + Math.sin(f.t * 1.3 + i) * 0.05;
+      else target = (i % 2 ? 0.36 : -0.36) * (f.portrait ? 0.8 : 1) + Math.sin(f.t * 0.9) * 0.12 + side * 0.02;
+      st.ang[i] = lerp(st.ang[i], target, 1 - Math.exp(-f.dt * 2.2));
+      const ang = st.ang[i];
+      const c = cols[(i + swap) % 2];
+      const len = (fy - sy) / Math.cos(ang);
+      const ex = sx + Math.sin(ang) * len, ey = sy + Math.cos(ang) * len;
+      const nx = Math.cos(ang), ny = -Math.sin(ang);
+      const gr = g.createLinearGradient(sx, sy, ex, ey);
+      gr.addColorStop(0, rgba(shade(c, 0.35), bright));
+      gr.addColorStop(0.35, rgba(c, bright * 0.55));
+      gr.addColorStop(1, rgba(c, bright * 0.22));
+      g.fillStyle = gr;
+      // three nested cones give a soft edge and a brighter core
+      for (const k of [1, 0.62, 0.3]) {
+        const hw = Math.tan(half * k) * len, sw = s * 0.004 / q;
+        g.beginPath();
+        g.moveTo(sx - nx * sw, sy - ny * sw);
+        g.lineTo(sx + nx * sw, sy + ny * sw);
+        g.lineTo(ex + nx * hw, ey + ny * hw);
+        g.lineTo(ex - nx * hw, ey - ny * hw);
+        g.closePath();
+        g.fill();
+      }
+      heads.push([sx * q, ex * q, c, Math.tan(half) * len * q]);
+    }
+    // haze: the beams only show where the smoke is thick
+    g.globalCompositeOperation = 'destination-in';
+    const hz = hazeTile();
+    const dx = Math.sin(f.t * 0.05) * lw * 0.2 - lw * 0.25, dy = Math.cos(f.t * 0.04) * lh * 0.1 - lh * 0.2;
+    g.drawImage(hz, dx, dy, lw * 1.5, lh * 1.4);
+    g.globalCompositeOperation = 'source-over';
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(st.layer, 0, 0, w, h);
+
+    // pools of light where the beams land on the floor
+    for (const [, ex, c, spread] of heads) {
+      const pr = Math.max(s * 0.06, spread * 0.9);
+      ctx.save();
+      ctx.translate(ex, floorY);
+      ctx.scale(1, 0.16);
+      const pg = ctx.createRadialGradient(0, 0, 0, 0, 0, pr);
+      pg.addColorStop(0, rgba(c, 0.32 + a.beat * 0.12));
+      pg.addColorStop(1, rgba(c, 0));
+      ctx.fillStyle = pg;
+      ctx.fillRect(-pr, -pr, pr * 2, pr * 2);
+      ctx.restore();
+    }
+    // the light heads along the top edge
+    for (const [hx, , c] of heads) {
+      const fr = s * (0.05 + a.kick * 0.015);
+      const hg = ctx.createRadialGradient(hx, 0, 0, hx, 0, fr);
+      hg.addColorStop(0, rgba('#ffffff', 0.85));
+      hg.addColorStop(0.25, rgba(c, 0.55));
+      hg.addColorStop(1, rgba(c, 0));
+      ctx.fillStyle = hg;
+      ctx.fillRect(hx - fr, 0, fr * 2, fr);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    // mirrored bars on the floor, bass in the middle
+    const n = f.portrait ? 26 : f.square ? 34 : 50;
+    const vals = mirrored(a.bands.subarray(0, 48), n);
+    const slot = (w * 0.92) / n, bw = slot * 0.5, x0 = w * 0.04;
+    const maxH = s * (f.portrait ? 0.15 : 0.17);
+    ctx.beginPath();
+    const tops = [];
+    for (let i = 0; i < n; i++) {
+      const x = i / (n - 1);
+      const taper = 0.35 + 0.65 * Math.pow(Math.sin(Math.PI * (0.04 + x * 0.92)), 0.7);
+      st.bars[i] = follow(st.bars[i], clamp(vals[i] * taper * (1 + a.kick * 0.15)), 0.6, 0.14);
+      const bh = Math.max(bw, st.bars[i] * maxH);
+      tops.push(bh);
+      addPill(ctx, x0 + i * slot + (slot - bw) / 2, floorY - bh, bw, bh + bw * 0.5, bw / 2);
+    }
+    const bg = ctx.createLinearGradient(x0, 0, w - x0, 0);
+    bg.addColorStop(0, cols[1]);
+    bg.addColorStop(0.5, shade(cols[0], 0.15));
+    bg.addColorStop(1, cols[1]);
+    ctx.fillStyle = bg;
+    ctx.fill();
+    // reflection: same bars upside down, fading into the floor
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const bh = tops[i] * 0.55;
+      addPill(ctx, x0 + i * slot + (slot - bw) / 2, floorY + s * 0.008, bw, bh, bw / 2);
+    }
+    const rg = ctx.createLinearGradient(0, floorY, 0, floorY + maxH * 0.55);
+    rg.addColorStop(0, rgba(mix(cols[0], cols[1], 0.5), 0.32));
+    rg.addColorStop(1, rgba(mix(cols[0], cols[1], 0.5), 0));
+    ctx.fillStyle = rg;
+    ctx.fill();
+    // thin bright floor line
+    const fl = ctx.createLinearGradient(0, 0, w, 0);
+    fl.addColorStop(0, rgba(cols[1], 0));
+    fl.addColorStop(0.5, rgba(shade(cols[0], 0.5), 0.75));
+    fl.addColorStop(1, rgba(cols[1], 0));
+    ctx.fillStyle = fl;
+    ctx.fillRect(0, floorY + s * 0.002, w, Math.max(1, s * 0.002));
+  },
+};
+
+// ---------- 5. Prism Ring ----------
+const prism = {
+  id: 'prism',
+  name: 'Prism Ring',
+  ne: 'प्रिज्म घेरा',
+  cat: 'dance',
+  text: (f) => (f.portrait
+    ? { title: { y: 0.74, font: 'teko', upper: true, style: 'glow', size: 0.09 }, sub: { y: 0.785, font: 'khand', style: 'shadow', size: 0.04, opacity: 0.9 } }
+    : f.square
+      ? { title: { y: 0.84, font: 'teko', upper: true, style: 'glow', size: 0.075 }, sub: { y: 0.905, font: 'khand', style: 'shadow', size: 0.036, opacity: 0.9 } }
+      : { title: { y: 0.85, font: 'teko', upper: true, style: 'glow', size: 0.075 }, sub: { y: 0.925, font: 'khand', style: 'shadow', size: 0.036, opacity: 0.9 } }),
+  setup: () => ({ v: new Float32Array(130), half: new Float32Array(66), spin: 0, split: 0 }),
+  draw(ctx, f, st) {
+    const { w, h, s, a } = f;
+    photoBackground(ctx, f, { kind: 'blur', dim: 0.42, zoom: 0.12 });
+    shadeLayer(ctx, f, st, (g, sf) => vignette(g, sf, 0.65));
+
+    // three colours a third of the colour wheel apart, starting at the accent:
+    // where all three overlap they add up to white
+    const key = f.color.accent;
+    if (st.key !== key) {
+      st.key = key;
+      const hu = hueOf(f.color.accent);
+      st.rgb = [hslHex(hu, 1, 0.56), hslHex(hu + 120, 1, 0.52), hslHex(hu + 240, 1, 0.6)];
+    }
+    const cx = w / 2, cy = h * (f.portrait ? 0.4 : f.square ? 0.42 : 0.42);
+    const r = s * (f.portrait ? 0.22 : f.square ? 0.19 : 0.17) * (1 + a.kick * 0.035);
+    const gap = s * 0.025, amp = s * (f.portrait ? 0.15 : 0.13);
+    const n = st.v.length - 2;
+    const m = n / 2;
+    const half = resample(a.bands.subarray(0, 48), m + 1, st.half);
+    for (let i = 0; i <= n; i++) {
+      const k = i <= m ? i : n - i;
+      // bass at the top, a gentle ripple running round so it never sits still
+      const flow = 0.85 + 0.15 * Math.sin(k * 0.45 - f.t * 3);
+      st.v[i] = follow(st.v[i], clamp(half[k] * flow), 0.55, 0.15);
+    }
+    // the colours spring apart on each beat, then settle back to white
+    st.split = Math.max(a.beat, st.split - f.dt * 2.5);
+    st.spin += f.dt * (0.04 + a.energy * 0.06);
+
+    // soft halo
+    const halo = ctx.createRadialGradient(cx, cy, r + gap, cx, cy, r + gap + amp * 1.5);
+    halo.addColorStop(0, rgba(f.color.accent, 0.16 + a.beat * 0.1));
+    halo.addColorStop(1, rgba(f.color.accent, 0));
+    ctx.fillStyle = halo;
+    ctx.fillRect(cx - r * 3, cy - r * 3, r * 6, r * 6);
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineJoin = 'round';
+    const pts = [];
+    for (let L = 0; L < 3; L++) {
+      const off = (L - 1) * (0.006 + st.split * 0.07) + Math.sin(st.spin) * 0.05;
+      const sc = 1 + (L - 1) * st.split * 0.025;
+      pts.length = 0;
+      for (let i = 0; i < n; i++) {
+        const an = -Math.PI / 2 + (i / n) * TAU + off;
+        const rr = (r + gap + st.v[i] * amp) * sc;
+        pts.push([cx + Math.cos(an) * rr, cy + Math.sin(an) * rr]);
+      }
+      const c = st.rgb[L];
+      ctx.beginPath();
+      smoothLoop(ctx, pts);
+      ctx.moveTo(cx + r + gap * 0.5, cy);
+      ctx.arc(cx, cy, r + gap * 0.5, 0, TAU, true);
+      ctx.fillStyle = rgba(c, 0.045);
+      ctx.fill();
+      ctx.beginPath();
+      smoothLoop(ctx, pts);
+      ctx.strokeStyle = rgba(c, 0.18);
+      ctx.lineWidth = s * 0.016;
+      ctx.stroke();
+      ctx.strokeStyle = rgba(c, 0.95);
+      ctx.lineWidth = Math.max(1.5, s * 0.0042);
+      ctx.stroke();
+    }
+    // thin outer orbit with a few dots riding on it
+    const ro = r + gap + amp * 1.18;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ro, 0, TAU);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = Math.max(1, s * 0.0015);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    for (let i = 0; i < 3; i++) {
+      const an = st.spin * 2 + (i / 3) * TAU;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(an) * ro, cy + Math.sin(an) * ro, s * 0.004, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    // the photo with a crisp white rim
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + s * 0.006, 0, TAU);
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fill();
+    circlePhoto(ctx, f, cx, cy, r, 1.05 + a.beat * 0.02);
+  },
+};
+
+// ---------- 6. Pulse Grid ----------
+const pulseGrid = {
+  id: 'pulse-grid',
+  name: 'Pulse Grid',
+  ne: 'धड्कन जाली',
+  cat: 'dance',
+  text: (f) => ({
+    title: { y: 0.5 - 0.03 * f.s / f.h, font: 'khand', style: 'glow', size: f.portrait ? 0.1 : 0.088, upper: true },
+    sub: { y: 0.5 + 0.055 * f.s / f.h, font: 'monoton', style: 'glow', color: 'accent', size: 0.042, opacity: 1 },
+  }),
+  setup(f) {
+    const { w, h, s } = f;
+    const sp = s * 0.043;
+    const nx = Math.floor(w / sp), ny = Math.floor(h / sp);
+    const ox = (w - (nx - 1) * sp) / 2, oy = (h - (ny - 1) * sp) / 2;
+    const N = nx * ny;
+    const F = () => new Float32Array(N);
+    const st = { sp, N, x: F(), y: F(), d: F(), ux: F(), uy: F(), k: F(), d1: F(), d2: F(), lv: new Uint8Array(N), dx: F(), ripples: [] };
+    const cx = w / 2, cy = h / 2;
+    const maxD = Math.hypot(w, h) / 2;
+    st.maxD = maxD;
+    const rx = Math.min(w * 0.4, s * 0.62), ry = s * 0.17;
+    for (let j = 0, i = 0; j < ny; j++) {
+      for (let q = 0; q < nx; q++, i++) {
+        const x = ox + q * sp, y = oy + j * sp;
+        const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) || 1;
+        st.x[i] = x; st.y[i] = y; st.d[i] = d; st.ux[i] = dx / d; st.uy[i] = dy / d;
+        st.d1[i] = Math.hypot(x - (cx - w * 0.32), y - cy * 0.7);
+        st.d2[i] = Math.hypot(x - (cx + w * 0.32), y - cy * 1.3);
+        // quiet behind the words, and fading out before the edges
+        const ty = dy - s * 0.015;
+        const tm = Math.exp(-((dx / rx) ** 2 + (ty / ry) ** 2) * 2.2);
+        const edge = clamp(Math.min(x, w - x, y, h - y) / (s * 0.12));
+        st.k[i] = (1 - 0.88 * tm) * (0.25 + 0.75 * edge);
+      }
+    }
+    return st;
   },
   draw(ctx, f, st) {
     const { w, h, s, a } = f;
     const cols = neon(f, st);
-    if (!st.pal || st.palKey !== st.neonKey) {
-      // three brightness steps per colour so flipping pieces catch the light
-      st.palKey = st.neonKey;
-      st.pal = [...cols, '#ffffff', '#ffd23a'].map((c) => [shade(c, -0.35), c, shade(c, 0.45)]);
-    }
-    photoBackground(ctx, f, { dim: 0.25, zoom: 0.08, punch: 0.015 });
-    fadeEdge(ctx, f, 'top', 0.32, 0.45);
+    ctx.fillStyle = '#04030a';
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 0.26;
+    photoBackground(ctx, f, { kind: 'blur', zoom: 0.1 });
+    ctx.globalAlpha = 1;
+    // soft colour bloom in the middle that breathes with the beat
+    const cx = w / 2, cy = h / 2;
+    const bl = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 0.7);
+    bl.addColorStop(0, rgba(cols[0], 0.18 + a.beat * 0.1));
+    bl.addColorStop(1, rgba(cols[0], 0));
+    ctx.fillStyle = bl;
+    ctx.fillRect(0, 0, w, h);
 
-    // disco light spots sweeping over the photo
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 4; i++) {
-      const px = w * (0.5 + 0.42 * Math.sin(f.t * (0.31 + i * 0.07) + i * 1.7));
-      const py = h * (0.5 + 0.38 * Math.cos(f.t * (0.27 + i * 0.05) + i * 2.3));
-      const pr = s * (0.28 + 0.06 * Math.sin(f.t + i));
-      const g = ctx.createRadialGradient(px, py, 0, px, py, pr);
-      g.addColorStop(0, rgba(cols[(i + Math.floor(a.beats / 4)) % cols.length], 0.3 + a.beat * 0.18));
-      g.addColorStop(1, rgba(cols[i % cols.length], 0));
-      ctx.fillStyle = g;
-      ctx.fillRect(px - pr, py - pr, pr * 2, pr * 2);
+    if (a.beatHit) st.ripples.push({ t: f.t, amp: 0.85 + a.kick * 0.3 });
+    while (st.ripples.length && f.t - st.ripples[0].t > 3.2) st.ripples.shift();
+    const speed = st.maxD / 1.9, width = s * 0.08;
+    const B = a.bands, nb = 44;
+    const L = 7;
+    const t = f.t;
+    for (let i = 0; i < st.N; i++) {
+      const d = st.d[i];
+      // spectrum as rings: bass near the middle, highs further out
+      let v = 0.42 * B[Math.min(nb, Math.floor((d / st.maxD) * nb))];
+      // two slow wave sources crossing over each other
+      v += 0.3 * (1 + Math.sin(st.d1[i] / (s * 0.07) - t * 2.2)) * (1 + Math.sin(st.d2[i] / (s * 0.07) - t * 1.9)) * 0.25;
+      let push = 0;
+      for (const r of st.ripples) {
+        const age = t - r.t;
+        const x = (d - age * speed) / width;
+        if (x > 4 || x < -6) continue;
+        const e = r.amp * Math.exp(-age * 0.75) * Math.cos(x * 2.2) * Math.exp(-x * x * 0.3);
+        v += e;
+        push += e;
+      }
+      v *= st.k[i];
+      st.lv[i] = Math.max(0, Math.min(L - 1, Math.floor(v * L)));
+      st.dx[i] = push * st.sp * 0.22;
     }
-    // mirror-ball sparkles drifting across
-    const spin = f.t * 0.25;
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    for (let i = 0; i < 48; i++) {
-      const th = (i * 2.399 + spin) % TAU;
-      const c = Math.cos(th);
-      if (c < 0.15) continue;
-      const row = (i * 7) % 12;
-      const x = w / 2 + Math.sin(th) * w * 0.62;
-      const y = h * (0.08 + row * 0.08);
-      const r = s * 0.004 * c * (1 + a.beat * 0.6);
-      ctx.globalAlpha = c * (0.35 + a.beat * 0.4);
+    // one path per brightness step: few style changes, many dots
+    const grad = ctx.createRadialGradient(cx, cy, s * 0.1, cx, cy, st.maxD);
+    grad.addColorStop(0, shade(cols[0], 0.2));
+    grad.addColorStop(0.55, cols[1]);
+    grad.addColorStop(1, shade(cols[1], -0.1));
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = grad;
+    for (let l = 0; l < L; l++) {
+      const rad = st.sp * (0.09 + 0.25 * (l / (L - 1)));
       ctx.beginPath();
-      ctx.arc(x, y, r, 0, TAU);
+      let any = false;
+      for (let i = 0; i < st.N; i++) {
+        if (st.lv[i] !== l) continue;
+        const x = st.x[i] + st.ux[i] * st.dx[i], y = st.y[i] + st.uy[i] * st.dx[i];
+        ctx.moveTo(x + rad, y);
+        ctx.arc(x, y, rad, 0, TAU);
+        any = true;
+      }
+      if (!any) continue;
+      ctx.globalAlpha = 0.3 + 0.7 * (l / (L - 1));
       ctx.fill();
+      if (l >= L - 2) {
+        // white hot centres on the crest
+        ctx.globalAlpha = 0.55;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        for (let i = 0; i < st.N; i++) {
+          if (st.lv[i] !== l) continue;
+          const x = st.x[i] + st.ux[i] * st.dx[i], y = st.y[i] + st.uy[i] * st.dx[i];
+          ctx.moveTo(x + rad * 0.45, y);
+          ctx.arc(x, y, rad * 0.45, 0, TAU);
+        }
+        ctx.fill();
+        ctx.fillStyle = grad;
+      }
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
-
-    const R = st.r;
-    const spawn = (x, y, vx, vy) => {
-      const i = st.next;
-      st.next = (st.next + 1) % CONF;
-      st.on[i] = 1;
-      st.x[i] = x; st.y[i] = y; st.vx[i] = vx; st.vy[i] = vy;
-      st.rot[i] = R() * TAU; st.vr[i] = (R() - 0.5) * 10;
-      st.flip[i] = R() * TAU; st.vf[i] = 4 + R() * 8;
-      st.sz[i] = 0.6 + R() * 0.7;
-      st.col[i] = Math.floor(R() * st.pal.length);
-      st.kind[i] = R() < 0.7 ? 0 : R() < 0.6 ? 1 : 2;
-    };
-    if (a.beatHit) {
-      const kind = st.burst++ % 3;
-      const count = Math.round(34 + a.energy * 30);
-      for (let k = 0; k < count; k++) {
-        const sp = s * (1.2 + R() * 1.4);
-        if (kind < 2) {
-          // corner cannons
-          const dir = kind === 0 ? 1 : -1;
-          const ang = -Math.PI / 2 + dir * (0.25 + R() * 0.45);
-          spawn(kind === 0 ? w * 0.02 : w * 0.98, h * 1.01, Math.cos(ang) * sp, Math.sin(ang) * sp * (f.portrait ? 1.25 : 1));
-        } else {
-          // pop in the sky
-          const ang = R() * TAU;
-          spawn(w * (0.3 + R() * 0.4), h * 0.3, Math.cos(ang) * sp * 0.6, Math.sin(ang) * sp * 0.6 - s * 0.3);
-        }
-      }
-    }
-    // a light drizzle from the top so it never runs dry
-    st.drip += f.dt * (5 + a.energy * 6);
-    while (st.drip > 1) {
-      st.drip -= 1;
-      spawn(R() * w, -s * 0.03, (R() - 0.5) * s * 0.1, s * 0.1);
-    }
-
-    const dt = f.dt, drag = Math.exp(-dt * 2.4), g = s * 0.75;
-    const base = s * 0.024;
-    for (let i = 0; i < CONF; i++) {
-      if (!st.on[i]) continue;
-      st.vx[i] *= drag;
-      st.vy[i] = st.vy[i] * drag + g * dt;
-      st.x[i] += (st.vx[i] + Math.sin(f.t * 3 + i) * s * 0.08) * dt;
-      st.y[i] += st.vy[i] * dt;
-      st.rot[i] += st.vr[i] * dt;
-      st.flip[i] += st.vf[i] * dt;
-      if (st.y[i] > h + base * 3 || st.x[i] < -w * 0.2 || st.x[i] > w * 1.2) { st.on[i] = 0; continue; }
-      const cf = Math.cos(st.flip[i]);
-      const lit = st.pal[st.col[i]][cf > 0.5 ? 2 : cf > -0.3 ? 1 : 0];
-      const sz = base * st.sz[i];
-      ctx.save();
-      ctx.translate(st.x[i], st.y[i]);
-      ctx.rotate(st.rot[i]);
-      ctx.fillStyle = lit;
-      if (st.kind[i] === 0) {
-        ctx.fillRect(-sz * 0.5, -sz * 0.9 * Math.abs(cf) - 0.5, sz, sz * 1.8 * Math.abs(cf) + 1);
-      } else if (st.kind[i] === 1) {
-        ctx.scale(1, Math.abs(cf) + 0.08);
-        ctx.beginPath();
-        ctx.arc(0, 0, sz * 0.55, 0, TAU);
-        ctx.fill();
-      } else {
-        ctx.scale(Math.abs(cf) + 0.1, 1);
-        ctx.fillRect(-sz * 0.2, -sz * 1.4, sz * 0.4, sz * 2.8);
-      }
-      ctx.restore();
-    }
-    shadeLayer(ctx, f, st, (g, sf) => vignette(g, sf, 0.4));
+    shadeLayer(ctx, f, st, (g, sf) => vignette(g, sf, 0.6));
   },
 };
 
-// ---------- 5. LED Equalizer ----------
-const ledEq = {
-  id: 'led-eq',
-  name: 'LED Equalizer',
-  ne: 'एलइडी इक्वलाइजर',
+// ---------- 7. Neon Wave ----------
+const WAVES = 5, WPTS = 56;
+const neonWave = {
+  id: 'neon-wave',
+  name: 'Neon Wave',
+  ne: 'नियोन लहर',
   cat: 'dance',
   text: (f) => ({
-    title: { y: f.portrait ? 0.16 : 0.11, font: 'teko', style: 'glow', size: 0.085, upper: true },
-    sub: { y: f.portrait ? 0.205 : 0.185, font: 'monoton', style: 'glow', color: 'accent', size: 0.046, opacity: 1 },
+    title: { y: f.portrait ? 0.14 : 0.13, font: 'teko', style: 'glow', size: f.portrait ? 0.1 : 0.088, upper: true },
+    sub: { y: f.portrait ? 0.19 : 0.215, font: 'monoton', style: 'glow', color: 'accent', size: 0.046, opacity: 1 },
   }),
-  setup(f) {
-    const cols = f.portrait ? 16 : f.square ? 20 : 28;
-    const rows = f.portrait ? 18 : 16;
-    const box = f.portrait
-      ? { x: f.w * 0.07, y: f.h * 0.4, w: f.w * 0.86, h: f.h * 0.4 }
-      : f.square
-        ? { x: f.w * 0.08, y: f.h * 0.33, w: f.w * 0.84, h: f.h * 0.5 }
-        : { x: f.w * 0.1, y: f.h * 0.3, w: f.w * 0.8, h: f.h * 0.52 };
-    const cw = box.w / cols, ch = box.h / rows;
-    // unlit grid drawn once
-    const off = document.createElement('canvas');
-    off.width = Math.ceil(box.w);
-    off.height = Math.ceil(box.h);
-    const g = off.getContext('2d');
-    g.fillStyle = 'rgba(255,255,255,0.07)';
-    for (let i = 0; i < cols; i++) {
-      for (let r = 0; r < rows; r++) g.fillRect(i * cw + cw * 0.1, r * ch + ch * 0.12, cw * 0.8, ch * 0.76);
-    }
-    return { cols, rows, box, cw, ch, off, v: new Float32Array(cols), peak: new Float32Array(cols), hold: new Float32Array(cols), pv: new Float32Array(cols), tmp: new Float32Array(cols) };
-  },
+  setup: () => ({ v: Array.from({ length: WAVES }, () => new Float32Array(WPTS)), ripple: 0 }),
   draw(ctx, f, st) {
     const { w, h, s, a } = f;
-    const { cols, rows, box, cw, ch } = st;
-    photoBackground(ctx, f, { dim: 0.5, zoom: 0.08, punch: 0.012 });
-    fadeEdge(ctx, f, 'top', 0.3, 0.4);
+    const cols = neon(f, st);
+    const floorY = h * (f.portrait ? 0.78 : f.square ? 0.75 : 0.77);
+    photoBackground(ctx, f, { dim: 0.28, zoom: 0.08, punch: 0.008 });
+    shadeLayer(ctx, f, st, (g, sf) => {
+      const fy = sf.h * (sf.portrait ? 0.78 : sf.square ? 0.75 : 0.77);
+      fadeEdge(g, sf, 'top', 0.32, 0.5);
+      // the photo darkens towards the horizon so the neon pops
+      const dg = g.createLinearGradient(0, fy - sf.s * 0.45, 0, fy);
+      dg.addColorStop(0, 'rgba(3,2,8,0)');
+      dg.addColorStop(1, 'rgba(3,2,8,0.85)');
+      g.fillStyle = dg;
+      g.fillRect(0, fy - sf.s * 0.45, sf.w, sf.s * 0.45);
+      // wet floor
+      const fl = g.createLinearGradient(0, fy, 0, sf.h);
+      fl.addColorStop(0, '#0a0614');
+      fl.addColorStop(1, '#020104');
+      g.fillStyle = fl;
+      g.fillRect(0, fy, sf.w, sf.h - fy);
+      vignette(g, sf, 0.45);
+    });
 
-    // panel
-    const pad = s * 0.025;
-    roundRect(ctx, box.x - pad, box.y - pad * 1.8, box.w + pad * 2, box.h + pad * 2.8, s * 0.02);
-    ctx.fillStyle = 'rgba(4,4,10,0.72)';
-    ctx.fill();
-    ctx.lineWidth = Math.max(1, s * 0.003);
-    ctx.strokeStyle = rgba(f.color.accent, 0.25 + a.beat * 0.55);
-    ctx.stroke();
-    ctx.drawImage(st.off, box.x, box.y);
-
-    // beat lights along the top of the panel
-    const nl = 8, lit = a.beats % nl;
-    for (let i = 0; i < nl; i++) {
-      const lx = box.x + box.w * ((i + 0.5) / nl);
-      ctx.beginPath();
-      ctx.arc(lx, box.y - pad * 0.9, s * 0.006, 0, TAU);
-      ctx.fillStyle = i === lit ? rgba(f.color.accent, 0.5 + a.beat * 0.5) : 'rgba(255,255,255,0.1)';
-      ctx.fill();
+    const m = mirrored(a.bands.subarray(0, 50), WPTS);
+    const amp = s * (f.portrait ? 0.44 : 0.42) * (1 + a.kick * 0.08);
+    const xs = (i) => (i / (WPTS - 1)) * w;
+    const layers = [];
+    for (let k = 0; k < WAVES; k++) {
+      // back waves are taller and lag behind; front waves are quick and low
+      const depth = k / (WAVES - 1);
+      const rate = lerp(0.12, 0.5, depth);
+      const tall = lerp(1, 0.55, depth);
+      const arr = st.v[k];
+      const pts = [];
+      for (let i = 0; i < WPTS; i++) {
+        const x = i / (WPTS - 1);
+        const taper = Math.pow(Math.sin(Math.PI * x), 0.9);
+        const swell = 0.6 + 0.4 * Math.sin(i * (0.22 + k * 0.05) - f.t * (1.1 + k * 0.35) + k * 1.7);
+        arr[i] = lerp(arr[i], clamp(m[i] * swell + 0.06) * taper, rate);
+        pts.push([xs(i), floorY - arr[i] * amp * tall]);
+      }
+      layers.push(pts);
     }
 
-    const green = '#36ff7a', yellow = '#ffd83a', red = '#ff3b4a';
-    const colorAt = (r) => (r < rows * 0.5 ? green : r < rows * 0.72 ? yellow : red);
-    const vals = resample(a.bands.subarray(0, 52), cols, st.tmp);
-    const bx = cw * 0.1, bw = cw * 0.8, bh = ch * 0.76;
-    for (let i = 0; i < cols; i++) {
-      const target = clamp(vals[i] * (0.85 + 0.25 * (i / cols)) * (1 + a.kick * 0.15));
-      st.v[i] = target > st.v[i] ? lerp(st.v[i], target, 0.7) : lerp(st.v[i], target, 0.18);
-      const lvl = Math.round(st.v[i] * rows);
-      // peak cap: holds, then falls
-      if (lvl >= st.peak[i]) { st.peak[i] = lvl; st.hold[i] = 0.4; st.pv[i] = 0; }
-      else if ((st.hold[i] -= f.dt) < 0) {
-        st.pv[i] += rows * 3 * f.dt;
-        st.peak[i] = Math.max(lvl, st.peak[i] - st.pv[i] * f.dt);
-      }
-      const x = box.x + i * cw;
-      for (let r = 0; r < lvl; r++) {
-        ctx.fillStyle = colorAt(r);
-        ctx.fillRect(x + bx, box.y + box.h - (r + 1) * ch + ch * 0.12, bw, bh);
-      }
-      if (lvl > 0) {
-        // soft halo on the lit part
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = rgba(colorAt(lvl - 1), 0.1);
-        ctx.fillRect(x - cw * 0.1, box.y + box.h - lvl * ch, cw * 1.2, lvl * ch);
-        // reflection under the panel
-        for (let r = 0; r < Math.min(lvl, 3); r++) {
-          ctx.fillStyle = rgba(colorAt(r), 0.16 - r * 0.05);
-          ctx.fillRect(x + bx, box.y + box.h + pad * 0.4 + r * ch * 0.7, bw, bh * 0.6);
-        }
-        ctx.globalCompositeOperation = 'source-over';
-      }
-      const pr = Math.min(rows - 1, Math.floor(st.peak[i]));
-      if (st.peak[i] > 0.5) {
-        ctx.fillStyle = mix(f.color.accent, '#ffffff', 0.45);
-        ctx.fillRect(x + bx, box.y + box.h - (pr + 1) * ch + ch * 0.12, bw, bh);
-      }
+    // reflection on the wet floor: squashed, dim, broken by small ripples
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, floorY, w, h - floorY);
+    ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineJoin = 'round';
+    for (let k = 0; k < WAVES; k++) {
+      const c = cols[k % 2];
+      const rp = layers[k].map(([x, y], i) => [x + Math.sin(i * 1.7 + f.t * 2) * s * 0.003, floorY + (floorY - y) * 0.55]);
+      ctx.beginPath();
+      smoothLine(ctx, rp);
+      ctx.strokeStyle = rgba(c, 0.12 + 0.1 * (k / (WAVES - 1)));
+      ctx.lineWidth = s * 0.016;
+      ctx.stroke();
+      ctx.strokeStyle = rgba(c, 0.5);
+      ctx.lineWidth = Math.max(1, s * 0.003);
+      ctx.stroke();
     }
     ctx.globalCompositeOperation = 'source-over';
-    shadeLayer(ctx, f, st, (g, sf) => vignette(g, sf, 0.45));
+    // the reflection fades away from the horizon
+    const rf = ctx.createLinearGradient(0, floorY, 0, h);
+    rf.addColorStop(0, 'rgba(2,1,4,0)');
+    rf.addColorStop(0.85, 'rgba(2,1,4,0.8)');
+    rf.addColorStop(1, 'rgba(2,1,4,1)');
+    ctx.fillStyle = rf;
+    ctx.fillRect(0, floorY, w, h - floorY);
+    // thin dark ripple lines, closer together near the horizon
+    st.ripple = frac(st.ripple + f.dt * 0.25);
+    ctx.fillStyle = 'rgba(2,1,6,0.55)';
+    for (let j = 0; j < 14; j++) {
+      const p = (j + st.ripple) / 14;
+      const y = floorY + (h - floorY) * p * p;
+      ctx.fillRect(0, y, w, Math.max(1, s * 0.002 * (0.5 + p * 2)));
+    }
+    ctx.restore();
+
+    // stacked waves, back to front: dark body, faint colour, neon edge
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (let k = 0; k < WAVES; k++) {
+      const pts = layers[k];
+      const c = cols[k % 2];
+      const front = k === WAVES - 1;
+      ctx.beginPath();
+      smoothLine(ctx, pts);
+      ctx.lineTo(w, floorY);
+      ctx.lineTo(0, floorY);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(5,3,12,0.9)';
+      ctx.fill();
+      const body = ctx.createLinearGradient(0, floorY - amp, 0, floorY);
+      body.addColorStop(0, rgba(c, 0.16));
+      body.addColorStop(1, rgba(c, 0.02));
+      ctx.fillStyle = body;
+      ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.beginPath();
+      smoothLine(ctx, pts);
+      const al = 0.55 + 0.45 * (k / (WAVES - 1));
+      ctx.strokeStyle = rgba(c, 0.13 * al + a.beat * 0.04);
+      ctx.lineWidth = s * 0.02;
+      ctx.stroke();
+      ctx.strokeStyle = rgba(c, 0.95 * al);
+      ctx.lineWidth = Math.max(1.5, s * (front ? 0.005 : 0.0035));
+      ctx.stroke();
+      if (front) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.lineWidth = Math.max(1, s * 0.0016);
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    // horizon glow line
+    ctx.globalCompositeOperation = 'lighter';
+    const hl = ctx.createLinearGradient(0, 0, w, 0);
+    hl.addColorStop(0, rgba(cols[1], 0));
+    hl.addColorStop(0.5, rgba(shade(cols[0], 0.5), 0.85));
+    hl.addColorStop(1, rgba(cols[1], 0));
+    ctx.fillStyle = hl;
+    ctx.fillRect(0, floorY - s * 0.0015, w, Math.max(1, s * 0.003));
+    ctx.globalCompositeOperation = 'source-over';
   },
 };
 
-// ---------- 6. Kaleidoscope ----------
+// ---------- 8. Kaleidoscope ----------
 const kaleido = {
   id: 'kaleido',
   name: 'Kaleidoscope',
   ne: 'क्यालिडोस्कोप',
   cat: 'dance',
-  text: (f) => ({
-    title: { y: 0.5 - 0.022 * f.s / f.h, font: 'baloo', style: 'glow', size: 0.068 },
-    sub: { y: 0.5 + 0.06 * f.s / f.h, font: 'baloo', style: 'glow', color: 'accent', size: 0.036, opacity: 1 },
-  }),
+  text: (f) => {
+    // keep the words inside the centre circle: long titles shrink to fit
+    const d = 2 * f.s * (f.portrait ? 0.27 : 0.25) / f.w;
+    return {
+      title: { y: 0.5 - 0.022 * f.s / f.h, font: 'baloo', style: 'glow', size: 0.068, maxW: d * 0.8 },
+      sub: { y: 0.5 + 0.06 * f.s / f.h, font: 'baloo', style: 'glow', color: 'accent', size: 0.036, opacity: 1, maxW: d * 0.66 },
+    };
+  },
   setup: () => ({ rot: 0 }),
   draw(ctx, f, st) {
     const { w, h, s, a } = f;
@@ -733,4 +1080,4 @@ const kaleido = {
   },
 };
 
-export default [neonTunnel, lasers, synthwave, confetti, ledEq, kaleido];
+export default [neonWave, club, prism, neonTunnel, pulseGrid, lasers, synthwave, kaleido];
