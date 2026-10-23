@@ -1,0 +1,4 @@
+dev/samples
+.DS_Store
+node_modules/
+.kiro/

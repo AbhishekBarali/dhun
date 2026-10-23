@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dhun · music videos from a song and a photo</title>
+<meta name="description" content="Make a music video for YouTube on your phone: pick a song, a photo and a look. Free, nothing is uploaded.">
+<meta name="theme-color" content="#14111a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dhun">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;800&family=Bebas+Neue&family=Kalam:wght@400;700&family=Khand:wght@500;700&family=Martel:wght@400;800&family=Monoton&family=Mukta:wght@400;500;700;800&family=Permanent+Marker&family=Rozha+One&family=Teko:wght@500;600&family=Yatra+One&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <img src="icons/icon.svg" alt="" width="30" height="30">
+    <span class="brand-name">Dhun</span><span class="brand-ne">धुन</span>
+  </div>
+  <button id="langBtn" class="pill" type="button">नेपाली</button>
+</header>
+
+<main id="app">
+  <section class="stage" aria-label="Preview">
+    <div class="screen" id="screen">
+      <canvas id="view" width="960" height="540" aria-label="Video preview"></canvas>
+      <button id="playBtn" class="play" type="button" aria-label="Play">
+        <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+        <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+      </button>
+    </div>
+    <div class="seek-row">
+      <span id="timeNow">0:00</span>
+      <input id="seek" type="range" min="0" max="1" step="0.01" value="0" aria-label="Song position">
+      <span id="timeTotal">0:00</span>
+    </div>
+    <p class="hint" data-i18n="dragHint">Tap the words on the video to change them, drag to move.</p>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">1</span><span data-i18n="step1">Song and photo</span></h2>
+    <div class="pick-row">
+      <label class="pick" id="songPick">
+        <input id="songInput" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.flac">
+        <span class="pick-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18.5a2.5 2.5 0 1 1-2.5-2.5c.5 0 1 .1 1.5.4V5l11-2v12.5a2.5 2.5 0 1 1-2.5-2.5c.5 0 1 .1 1.5.4V7.4l-8 1.5z"/></svg></span>
+        <span class="pick-title" data-i18n="pickSong">Choose song</span>
+        <span class="pick-sub" id="songName" data-i18n="pickSongSub">MP3 or any music file</span>
+      </label>
+      <label class="pick" id="photoPick">
+        <input id="photoInput" type="file" accept="image/*">
+        <span class="pick-icon" id="photoIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm1 12h14l-4.5-6-3.5 4.5-2.5-3z M8.5 10.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg></span>
+        <img id="photoThumb" class="pick-thumb" alt="" hidden>
+        <span class="pick-title" data-i18n="pickPhoto">Choose photo</span>
+        <span class="pick-sub" id="photoName" data-i18n="pickPhotoSub">The picture for the video</span>
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">2</span><span data-i18n="step2">Pick a look</span></h2>
+    <div class="chips scroll" id="catChips" role="tablist"></div>
+    <div class="looks" id="looks"></div>
+  </section>
+
+  <section class="card" id="wordsCard">
+    <h2><span class="num">3</span><span data-i18n="step3">Words on the video</span></h2>
+    <div class="text-rows" id="textRows"></div>
+    <button id="addText" class="btn ghost" type="button" data-i18n="addText">+ Add more words</button>
+
+    <div class="editor" id="editor" hidden>
+      <div class="editor-head">
+        <strong id="editorTitle"></strong>
+        <button id="editorDone" class="btn small" type="button" data-i18n="done">Done</button>
+      </div>
+      <div class="label" data-i18n="font">Font</div>
+      <div class="chips scroll" id="fontChips"></div>
+      <div class="label"><span data-i18n="size">Size</span></div>
+      <input id="sizeRange" type="range" min="0.02" max="0.18" step="0.002" aria-label="Size">
+      <div class="label" data-i18n="colour">Colour</div>
+      <div class="swatches" id="textColors"></div>
+      <div class="label" data-i18n="style">Style</div>
+      <div class="chips scroll" id="styleChips"></div>
+      <div class="editor-actions">
+        <button id="centerText" class="btn small ghost" type="button" data-i18n="centre">Put in the middle</button>
+        <button id="deleteText" class="btn small danger" type="button" data-i18n="remove">Remove</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">4</span><span data-i18n="step4">Intro and ending</span><span class="opt" data-i18n="optional">optional</span></h2>
+    <p class="card-sub" data-i18n="step4Sub">Add your own clip or picture before and after the song.</p>
+    <div class="pick-row">
+      <div class="media-box" id="introBox" data-slot="intro"></div>
+      <div class="media-box" id="outroBox" data-slot="outro"></div>
+    </div>
+    <label class="switch">
+      <input id="rememberMedia" type="checkbox" checked>
+      <span data-i18n="remember">Use them for every video</span>
+    </label>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">5</span><span data-i18n="step5">More options</span></h2>
+    <div class="label" data-i18n="shape">Video shape</div>
+    <div class="chips" id="shapeChips"></div>
+    <div class="label" data-i18n="colours">Colours</div>
+    <div class="swatches" id="themeColors"></div>
+    <div class="label" data-i18n="part">How much of the song</div>
+    <div class="chips" id="partChips"></div>
+    <div class="part-start" id="partStartRow" hidden>
+      <span data-i18n="startAt">Start at</span>
+      <input id="partStart" type="range" min="0" max="1" step="0.5" value="0" aria-label="Start at">
+      <span id="partStartLabel">0:00</span>
+    </div>
+    <label class="switch"><input id="motionToggle" type="checkbox" checked><span data-i18n="motion">Slow zoom on the photo</span></label>
+    <label class="switch"><input id="beatTextToggle" type="checkbox"><span data-i18n="beatText">Words bounce with the beat</span></label>
+  </section>
+
+  <section class="card make">
+    <label class="field">
+      <span data-i18n="fileName">Video name</span>
+      <input id="fileName" type="text" autocomplete="off" placeholder="my song">
+    </label>
+    <button id="makeBtn" class="btn primary big" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg>
+      <span data-i18n="make">Make video</span>
+    </button>
+    <button id="testBtn" class="btn link" type="button" data-i18n="test">Try a 15-second test first</button>
+    <p class="card-sub" id="makeInfo"></p>
+  </section>
+
+  <footer class="foot">
+    <p data-i18n="privacy">Everything happens on your phone. Your song and photos are never uploaded.</p>
+  </footer>
+</main>
+
+<div class="overlay" id="recOverlay" hidden>
+  <div class="rec">
+    <div class="rec-screen"><canvas id="recCanvas" width="1920" height="1080"></canvas></div>
+    <div id="recRunning">
+      <div class="rec-status"><span class="rec-dot"></span><span data-i18n="recording">Making your video…</span></div>
+      <div class="bar"><div id="recBar"></div></div>
+      <div class="rec-time" id="recTime">0:00 / 0:00</div>
+      <p class="rec-note" data-i18n="keepOpen">Keep this screen open and don't lock the phone. It takes as long as the video.</p>
+      <button id="recCancel" class="btn ghost" type="button" data-i18n="cancel">Cancel</button>
+    </div>
+    <div id="recPaused" hidden>
+      <p class="rec-note strong" data-i18n="paused">Paused because the screen was left.</p>
+      <button id="recContinue" class="btn primary big" type="button" data-i18n="continue">Continue</button>
+      <button id="recCancel2" class="btn ghost" type="button" data-i18n="cancel">Cancel</button>
+    </div>
+    <div id="recDone" hidden>
+      <p class="rec-done-title" data-i18n="ready">Your video is ready</p>
+      <video id="doneVideo" controls playsinline></video>
+      <p class="rec-note" id="doneInfo"></p>
+      <button id="saveBtn" class="btn primary big" type="button" data-i18n="save">Save video</button>
+      <button id="downloadBtn" class="btn ghost" type="button" data-i18n="download">Download file</button>
+      <button id="againBtn" class="btn link" type="button" data-i18n="again">Back to editing</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<div class="media-pool" id="mediaPool" aria-hidden="true"></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
