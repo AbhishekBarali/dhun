@@ -1,6 +1,6 @@
 // Words on the video: the song name, a second line (singer / channel) and any
 // extra text the user adds. Each item can be dragged anywhere on the preview.
-import { fontCss } from './fonts.js';
+import { fontCss, fontById } from './fonts.js';
 import { roundRect, rgba, clamp } from './helpers.js';
 
 export const STYLES = ['shadow', 'outline', 'glow', 'box', 'tag', 'plain'];
@@ -19,6 +19,7 @@ export function makeItem(role, text, props = {}) {
     align: 'center',
     upper: false,
     opacity: 1,
+    hidden: false,    // the "Show" tick is off
     touched: {},      // fields the user changed by hand (kept when switching looks)
     ...props,
   };
@@ -61,9 +62,12 @@ function resolveColor(c, f) {
 
 // Draw one item; stores its on-screen box in item._box for tapping/dragging.
 export function drawItem(ctx, f, it, alpha = 1, pulse = 0) {
-  const raw = it.upper ? it.text.toUpperCase() : it.text;
+  let raw = it.upper ? it.text.toUpperCase() : it.text;
+  // Some display fonts have a hair-thin space, so words would run together.
+  const gap = fontById(it.font).spaces;
+  if (gap) raw = raw.replace(/ /g, ' '.repeat(gap));
   const lines = raw.split('\n').filter((l, i, arr) => l.length || arr.length === 1);
-  if (!raw.trim()) { it._box = null; return; }
+  if (it.hidden || !raw.trim()) { it._box = null; return; }
   let px = it.size * f.s * (1 + pulse);
   ctx.save();
   ctx.font = fontCss(it.font, px);

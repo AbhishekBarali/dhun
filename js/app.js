@@ -1,12 +1,14 @@
 // Dhun: the screen. Wires the pickers, looks, words, intro/outro and the
 // "Make video" button to the audio engine, renderer and recorder.
 import { TEMPLATES, CATEGORIES, templateById } from './templates/index.js';
-import { AudioEngine, fakeFeatures, makeFeatures } from './audio.js';
+import { AudioEngine, OfflineAnalyser, fakeFeatures, makeFeatures } from './audio.js';
 import { loadImageFile, preparePhoto, placeholderPhoto } from './photo.js';
 import { FONTS, ensureFont, ensureAllFonts } from './fonts.js';
 import { makeItem, applyLayout, drawItem, drawSelection, hitTest, STYLES } from './text.js';
 import { Scene, makeFrame, resizeFrame, buildTimeline, segmentAt, drawTimeline } from './renderer.js';
 import { Recorder, ScreenAwake, canRecord, extFor, shareBlob, downloadBlob, safeFileName } from './recorder.js';
+import { fastExportConfig, mixSoundtrack, exportVideo, seekVideo } from './exporter.js';
+import { OVERLAYS, makeOverlay } from './overlays.js';
 import { loadSettings, saveSettings, putMedia, getMedia, deleteMedia } from './store.js';
 import { t, setLang, getLang } from './i18n.js';
 import { formatTime, clamp } from './helpers.js';
@@ -62,10 +64,11 @@ const state = {
   motion: saved.motion ?? true,
   beatText: saved.beatText ?? false,
   remember: saved.remember ?? true,
+  overlay: OVERLAYS.includes(saved.overlay) ? saved.overlay : 'off',
   photo: placeholderPhoto(),
   songTitle: '',
   fileNameTouched: false,
-  items: [makeItem('title', ''), makeItem('sub', saved.sub || '')],
+  items: [makeItem('title', '', { hidden: !!saved.hideTitle }), makeItem('sub', saved.sub || '', { hidden: !!saved.hideSub })],
   selected: null,
   intro: null,
   outro: null,
@@ -84,7 +87,10 @@ function persist() {
   saveSettings({
     lang: getLang(), tplId: state.tplId, shape: state.shape, theme: state.theme,
     motion: state.motion, beatText: state.beatText, remember: state.remember,
+    overlay: state.overlay,
     sub: subItem() ? subItem().text : '',
+    hideTitle: titleItem() ? titleItem().hidden : false,
+    hideSub: subItem() ? subItem().hidden : false,
   });
 }
 
@@ -201,10 +207,12 @@ function setShape(shape) {
   applyLayout(state.items, tpl(), pf);
   $('looks').classList.toggle('tall', shape === 'tall');
   renderChips('shapeChips', ['wide', 'tall', 'square'], state.shape, (s) => { setShape(s); persist(); }, (s) => t(s));
+  updateMakeInfo();
   renderThumbs();
 }
 
 let idleT = 0, lastDraw = 0, lastNow = '';
+let previewOverlay = makeOverlay(state.overlay);
 function drawPreview(now) {
   requestAnimationFrame(drawPreview);
   if (document.hidden || state.recording) return;
@@ -226,19 +234,9 @@ function drawPreview(now) {
   }
   f.progress = clamp(f.t / f.dur);
   scene.draw(vctx, f);
+  if (previewOverlay) previewOverlay(vctx, f);
   const pulse = state.beatText ? f.a.beat * 0.045 : 0;
-  for (const it of state.items) {
-    if (it.text.trim()) drawItem(vctx, f, it, 1, it.role === 'title' ? pulse : pulse * 0.5);
-    else if (it.role === 'title') {
-      // Show where the song name will go until one is typed (preview only).
-      const keep = it.opacity;
-      it.text = t('songLabel');
-      it.opacity = 0.35;
-      drawItem(vctx, f, it, 1, 0);
-      it.text = '';
-      it.opacity = keep;
-    } else it._box = null;
-  }
+  for (const it of state.items) drawItem(vctx, f, it, 1, it.role === 'title' ? pulse : pulse * 0.5);
   drawSelection(vctx, f, state.selected, drag && drag.guide);
   if (audio.buffer) {
     const now2 = formatTime(f.t);
@@ -354,10 +352,12 @@ function renderThumbs() {
       f.a = makeFeatures();
       const sc = new Scene();
       sc.setTemplate(tp);
+      const ov = makeOverlay(state.overlay);
       for (let k = 0; k <= 24; k++) {
         f.t = 2 + k / 24; f.dt = 1 / 24; f.dur = 200; f.progress = f.t / 200;
         fakeFeatures(f.t, f.a, f.dt);
         sc.draw(ctx, f);
+        if (ov) ov(ctx, f);
       }
     }
     if (list.length) setTimeout(step, 0);
@@ -387,13 +387,23 @@ function renderTextRows() {
       if (it.role === 'sub') persist();
     });
     input.addEventListener('focus', () => select(it, false));
-    box.append(el('div', { class: 'text-row' + (state.selected === it ? ' active' : ''), 'data-id': it.id }, [
+    // The tick decides whether this line appears on the video at all.
+    const show = el('input', { type: 'checkbox', 'aria-label': `${roleLabel(it)}: ${t('show')}` });
+    show.checked = !it.hidden;
+    show.addEventListener('change', () => {
+      it.hidden = !show.checked;
+      row.classList.toggle('off', it.hidden);
+      if (it.hidden && state.selected === it) select(null);
+      persist();
+    });
+    const row = el('div', { class: 'text-row' + (state.selected === it ? ' active' : '') + (it.hidden ? ' off' : ''), 'data-id': it.id }, [
       el('div', { class: 'row-head' }, [
-        el('span', { text: roleLabel(it) }),
-        el('button', { class: 'btn small ghost', type: 'button', text: t('edit'), onclick: () => select(it, true) }),
+        el('label', { class: 'show' }, [show, el('span', { text: roleLabel(it) })]),
+        el('button', { class: 'btn small ghost', type: 'button', text: t('edit'), onclick: () => { if (it.hidden) { it.hidden = false; show.checked = true; row.classList.remove('off'); } select(it, true); } }),
       ]),
       input,
-    ]));
+    ]);
+    box.append(row);
   }
 }
 
@@ -461,7 +471,7 @@ $('deleteText').addEventListener('click', () => {
   const it = state.selected;
   if (!it) return;
   if (it.role === 'extra') state.items = state.items.filter((x) => x !== it);
-  else it.text = '';
+  else it.hidden = true;
   select(null);
   renderTextRows();
   persist();
@@ -668,7 +678,18 @@ function timelineLength() {
 }
 function updateMakeInfo() {
   const len = timelineLength();
-  $('makeInfo').textContent = len ? t('makeInfo', { len: formatTime(len) }) : '';
+  const key = fastLikely ? 'makeInfoFast' : 'makeInfo';
+  $('makeInfo').textContent = len ? t(key, { len: formatTime(len) }) : '';
+}
+
+function renderOverlayChips() {
+  renderChips('overlayChips', OVERLAYS, state.overlay, (o) => {
+    state.overlay = o;
+    previewOverlay = makeOverlay(o);
+    renderOverlayChips();
+    renderThumbs();
+    persist();
+  }, (o) => t(o));
 }
 
 // ---------- making the video ----------
@@ -686,14 +707,142 @@ function hideRec() {
   document.body.style.overflow = '';
 }
 
+// Fast export support is checked on the first tap of "Make video" for each
+// shape. Phones without WebCodecs answer at once (no encoder probing), so the
+// real-time fallback still starts inside the tap on older iPhones.
+// Add ?realtime to the address to force the old real-time recorder.
+const forceRealtime = new URLSearchParams(location.search).has('realtime');
+const fastLikely = !forceRealtime && ['VideoEncoder', 'AudioEncoder', 'VideoFrame', 'AudioData'].every((k) => k in window);
+const fastPending = {};
+const fastReady = {};
+function checkFast(shape) {
+  if (!fastPending[shape]) {
+    const [w, h] = SHAPES[shape].video;
+    fastPending[shape] = (fastLikely ? fastExportConfig(w, h, 30) : Promise.resolve(null)).catch(() => null).then((cfg) => {
+      fastReady[shape] = cfg;
+      return cfg;
+    });
+  }
+  return fastPending[shape];
+}
+
+// Everything both export paths share: the canvas, frame, look and words.
+async function prepareRender(test) {
+  const [vw, vh] = SHAPES[state.shape].video;
+  const canvas = $('recCanvas');
+  canvas.width = vw;
+  canvas.height = vh;
+  const ctx = canvas.getContext('2d');
+  const f = makeFrame(vw, vh);
+  f.preview = false;
+  f.photo = state.photo;
+  f.color = colors();
+  f.motion = state.motion;
+  f.dur = audio.duration;
+  const sc = new Scene();
+  sc.setTemplate(tpl());
+  const items = state.items.filter((i) => !i.hidden && i.text.trim()).map((i) => ({ ...i, touched: { ...i.touched } }));
+  await Promise.all(items.map((i) => ensureFont(i.font, i.text)));
+  const part = songPart();
+  const tl = buildTimeline(state.intro, part.len, state.outro);
+  const total = test ? Math.min(15, tl.total) : tl.total;
+  return { canvas, ctx, f, scene: sc, items, part, tl, total, test, overlay: makeOverlay(state.overlay) };
+}
+
+function setRecLabel(key) {
+  $('recRunning').querySelector('[data-i18n]').textContent = t(key);
+}
+
 async function makeVideo(test) {
   if (state.recording) return;
-  if (!canRecord()) { toast(t('cantRecord'), 6000); return; }
   if (!audio.buffer) {
     toast(t('needSong'));
     $('songPick').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
+  const fast = state.shape in fastReady ? fastReady[state.shape] : await checkFast(state.shape);
+  if (fast) return makeVideoFast(test, fast);
+  if (!canRecord()) { toast(t('cantRecord'), 6000); return; }
+  return makeVideoRealtime(test);
+}
+
+// ---------- fast export ----------
+async function makeVideoFast(test, cfg) {
+  window.__dhunPath = `fast ${cfg.video.cfg.codec} ${cfg.audio.cfg.codec}`;
+  awake.on();
+  // Clips are drawn by jumping to each frame, so they stay silent here;
+  // their sound is mixed into the soundtrack separately.
+  for (const m of clips()) {
+    m.el.muted = true;
+    try {
+      const p = m.el.play();
+      if (p) p.then(() => m.el.pause()).catch(() => {});
+    } catch (e) { /* drawn by seeking anyway */ }
+  }
+  audio.pause();
+  audio.stop();
+  updatePlay();
+  select(null);
+  const job = { cancelled: false };
+  state.recording = { fast: true, job, done: false };
+  setRecLabel(test ? 'testing' : 'recording');
+  $('recBar').style.width = '0%';
+  $('recTime').textContent = t('preparing');
+  $('recNote').textContent = t('keepOpenFast');
+  showRec('running');
+  try {
+    const R = await prepareRender(test);
+    const soundtrack = await mixSoundtrack({ song: audio.buffer, part: R.part, tl: R.tl });
+    if (job.cancelled) throw new Error('cancelled');
+    const an = new OfflineAnalyser(soundtrack);
+    const started = performance.now();
+    const blob = await exportVideo({
+      canvas: R.canvas, config: cfg, soundtrack, total: R.total, job,
+      drawFrame: async (T, dt) => {
+        const seg = segmentAt(R.tl, T);
+        if (seg.media && seg.media.type === 'video') {
+          const v = seg.media.el;
+          await seekVideo(v, clamp(T - seg.start, 0, Math.max(0, (v.duration || seg.dur) - 0.05)));
+        }
+        const f = R.f;
+        if (seg.kind === 'main') f.t = R.part.start + (T - seg.start);
+        else if (seg.kind === 'outro') f.t = R.part.start + R.part.len;
+        f.dt = dt;
+        f.progress = clamp(f.t / f.dur);
+        f.a = an.at(T, dt);
+        drawTimeline(R.ctx, f, T, { scene: R.scene, items: R.items, beatText: state.beatText, tl: R.tl, overlay: R.overlay });
+      },
+      onProgress: (done, n) => {
+        if (job.cancelled) return;
+        const p = done / n;
+        $('recBar').style.width = `${p * 100}%`;
+        const spent = (performance.now() - started) / 1000;
+        const left = done > 15 ? (spent / done) * (n - done) : 0;
+        $('recTime').textContent = left > 1
+          ? `${Math.round(p * 100)}% · ${t('left', { time: formatTime(left) })}`
+          : `${Math.round(p * 100)}%`;
+      },
+    });
+    if (job.cancelled) throw new Error('cancelled');
+    window.__dhunStats = { ...job.stats, secs: (performance.now() - started) / 1000 };
+    state.recording = null;
+    showResult(blob, R.total, test);
+  } catch (e) {
+    const wasCancelled = job.cancelled;
+    state.recording = null;
+    if (!wasCancelled) {
+      console.error(e);
+      hideRec();
+      toast(t('failed'), 6000);
+    }
+  } finally {
+    awake.off();
+    for (const m of clips()) { m.el.pause(); m.el.muted = false; }
+  }
+}
+
+// ---------- real-time recording (phones without fast export) ----------
+async function makeVideoRealtime(test) {
   // These must happen right inside the tap on iPhone: sound, clips, screen lock.
   const ready = audio.ensure();
   for (const m of clips()) audio.attachMedia(m.el);
@@ -714,37 +863,20 @@ async function makeVideo(test) {
   await new Promise((r) => setTimeout(r, 250));
   if (audio.master) audio.master.gain.value = 1;
 
-  const [vw, vh] = SHAPES[state.shape].video;
-  const canvas = $('recCanvas');
-  canvas.width = vw;
-  canvas.height = vh;
-  const ctx = canvas.getContext('2d');
-  const f = makeFrame(vw, vh);
-  f.preview = false;
-  f.photo = state.photo;
-  f.color = colors();
-  f.motion = state.motion;
-  f.dur = audio.duration;
-  const sc = new Scene();
-  sc.setTemplate(tpl());
-  const items = state.items.filter((i) => i.text.trim()).map((i) => ({ ...i, touched: { ...i.touched } }));
-  await Promise.all(items.map((i) => ensureFont(i.font, i.text)));
-
-  const part = songPart();
-  const tl = buildTimeline(state.intro, part.len, state.outro);
-  const total = test ? Math.min(15, tl.total) : tl.total;
-  $('recRunning').querySelector('[data-i18n]').textContent = t(test ? 'testing' : 'recording');
+  const R = await prepareRender(test);
+  setRecLabel(test ? 'testing' : 'recording');
   $('recBar').style.width = '0%';
-  $('recTime').textContent = `0:00 / ${formatTime(total)}`;
+  $('recTime').textContent = `0:00 / ${formatTime(R.total)}`;
+  $('recNote').textContent = t('keepOpen');
   showRec('running');
 
   audio.resetFeatures();
-  f.t = part.start;
-  f.a = audio.a;
-  drawTimeline(ctx, f, 0, { scene: sc, items, beatText: state.beatText, tl });
+  R.f.t = R.part.start;
+  R.f.a = audio.a;
+  drawTimeline(R.ctx, R.f, 0, { scene: R.scene, items: R.items, beatText: state.beatText, tl: R.tl, overlay: R.overlay });
   let rec;
   try {
-    rec = new Recorder(canvas, audio.recordStream, { fps: 30, videoBits: vw * vh >= 1900000 ? 8e6 : 6e6 });
+    rec = new Recorder(R.canvas, audio.recordStream, { fps: 30, videoBits: R.canvas.width * R.canvas.height >= 1900000 ? 8e6 : 6e6 });
     rec.start();
   } catch (e) {
     console.error(e);
@@ -754,9 +886,9 @@ async function makeVideo(test) {
     return;
   }
   const t0 = audio.ctx.currentTime + 0.3;
-  audio.scheduleSong(t0 + tl.main.start, part.start, part.len, part.fade);
+  audio.scheduleSong(t0 + R.tl.main.start, R.part.start, R.part.len, R.part.fade);
   state.recording = {
-    rec, t0, tl, total, f, ctx, scene: sc, items, part, test,
+    ...R, rec, t0,
     paused: false, done: false, lastT: 0, started: new Set(), shownSec: -1,
   };
   requestAnimationFrame(recordFrame);
@@ -778,7 +910,7 @@ function syncClips(R, seg, T) {
 
 function recordFrame() {
   const R = state.recording;
-  if (!R || R.done) return;
+  if (!R || R.done || R.fast) return;
   requestAnimationFrame(recordFrame);
   if (R.paused) return;
   const T = Math.max(0, audio.ctx.currentTime - R.t0);
@@ -792,7 +924,7 @@ function recordFrame() {
   f.dt = dt;
   f.progress = clamp(f.t / f.dur);
   f.a = audio.update(T, dt);
-  drawTimeline(R.ctx, f, T, { scene: R.scene, items: R.items, beatText: state.beatText, tl: R.tl });
+  drawTimeline(R.ctx, f, T, { scene: R.scene, items: R.items, beatText: state.beatText, tl: R.tl, overlay: R.overlay });
   const sec = Math.floor(T);
   if (sec !== R.shownSec) {
     R.shownSec = sec;
@@ -817,19 +949,25 @@ async function finishRecording() {
   awake.off();
   state.recording = null;
   if (!blob || !blob.size) { hideRec(); toast(t('failed'), 6000); return; }
-  const ext = extFor(blob.type || R.rec.mime);
-  const name = safeFileName(($('fileName').value || titleItem().text || state.songTitle) + (R.test ? ' test' : ''), ext);
+  showResult(blob, R.total, R.test, R.rec.mime);
+}
+
+function showResult(blob, total, test, mime) {
+  const ext = extFor(blob.type || mime || 'video/mp4');
+  const name = safeFileName(($('fileName').value || titleItem().text || state.songTitle) + (test ? ' test' : ''), ext);
   if (state.result) URL.revokeObjectURL(state.result.url);
   state.result = { blob, name, url: URL.createObjectURL(blob) };
   const v = $('doneVideo');
   v.src = state.result.url;
-  $('doneInfo').textContent = `${name} · ${t('doneInfo', { size: (blob.size / 1048576).toFixed(1), len: formatTime(R.total) })}`;
+  $('doneInfo').textContent = `${name} · ${t('doneInfo', { size: (blob.size / 1048576).toFixed(1), len: formatTime(total) })}`;
   showRec('done');
 }
 
 function cancelRecording() {
   const R = state.recording;
-  if (R) {
+  if (R && R.fast) {
+    R.job.cancelled = true;
+  } else if (R) {
     R.done = true;
     R.rec.cancel();
     audio.stop();
@@ -845,13 +983,16 @@ document.addEventListener('visibilitychange', () => {
   const R = state.recording;
   if (document.hidden) {
     if (audio.playing && !R) { audio.pause(); updatePlay(); }
-    if (R && !R.done && !R.paused) {
+    // The fast export simply waits and carries on when the screen is back.
+    if (R && !R.fast && !R.done && !R.paused) {
       R.paused = true;
       R.rec.pause();
       if (audio.ctx) audio.ctx.suspend();
       for (const m of clips()) m.el.pause();
       showRec('paused');
     }
+  } else if (R && R.fast) {
+    awake.on();
   }
 });
 
@@ -898,6 +1039,7 @@ function applyLang(l) {
   renderThemeSwatches();
   updatePart();
   setShapeChips();
+  renderOverlayChips();
   if (state.selected) renderEditor();
 }
 function setShapeChips() {

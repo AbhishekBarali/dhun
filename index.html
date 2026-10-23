@@ -111,6 +111,8 @@
     <h2><span class="num">5</span><span data-i18n="step5">More options</span></h2>
     <div class="label" data-i18n="shape">Video shape</div>
     <div class="chips" id="shapeChips"></div>
+    <div class="label" data-i18n="overlay">Wave at the bottom</div>
+    <div class="chips" id="overlayChips"></div>
     <div class="label" data-i18n="colours">Colours</div>
     <div class="swatches" id="themeColors"></div>
     <div class="label" data-i18n="part">How much of the song</div>
@@ -149,7 +151,7 @@
       <div class="rec-status"><span class="rec-dot"></span><span data-i18n="recording">Making your video…</span></div>
       <div class="bar"><div id="recBar"></div></div>
       <div class="rec-time" id="recTime">0:00 / 0:00</div>
-      <p class="rec-note" data-i18n="keepOpen">Keep this screen open and don't lock the phone. It takes as long as the video.</p>
+      <p class="rec-note" id="recNote" data-i18n="keepOpen">Keep this screen open and don't lock the phone. It takes as long as the video.</p>
       <button id="recCancel" class="btn ghost" type="button" data-i18n="cancel">Cancel</button>
     </div>
     <div id="recPaused" hidden>

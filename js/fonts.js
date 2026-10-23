@@ -11,7 +11,7 @@ export const FONTS = [
   { id: 'martel', family: 'Martel', weight: 800, label: 'Martel' },
   { id: 'bebas', family: 'Bebas Neue', weight: 400, label: 'Bebas', latinOnly: true },
   { id: 'marker', family: 'Permanent Marker', weight: 400, label: 'Marker', latinOnly: true },
-  { id: 'monoton', family: 'Monoton', weight: 400, label: 'Neon', latinOnly: true },
+  { id: 'monoton', family: 'Monoton', weight: 400, label: 'Neon', latinOnly: true, spaces: 3 },
 ];
 
 export const fontById = (id) => FONTS.find((f) => f.id === id) || FONTS[0];
