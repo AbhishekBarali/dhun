@@ -178,15 +178,17 @@ const himalaya = {
       }
       let top = h;
       for (const p of pts) top = Math.min(top, p[1]);
-      const low = li < st.layers.length - 1 ? st.layers[li + 1].base * h + 2 : h * 0.97 - s * 0.05;
+      const low = li < st.layers.length - 1 ? st.layers[li + 1].base * h + 2 : h * (f.portrait ? 0.9 : 0.97) - s * 0.05;
       ctx.beginPath();
       ctx.moveTo(0, low);
       for (const p of pts) ctx.lineTo(p[0], p[1]);
       ctx.lineTo(w, low);
       ctx.closePath();
-      const fill = ctx.createLinearGradient(0, top, 0, by + amp * 0.3);
+      // rock darkens downward, then mist gathers at the foot
+      const fill = ctx.createLinearGradient(0, top, 0, by);
       fill.addColorStop(0, L.col);
-      fill.addColorStop(1, shade(L.col, -0.35));
+      fill.addColorStop(0.55, shade(L.col, -0.25));
+      fill.addColorStop(1, mix(L.col, '#d9deea', 0.45));
       ctx.fillStyle = fill;
       ctx.fill();
 
@@ -210,7 +212,7 @@ const himalaya = {
 
       // shade the face of each peak turned away from the sun
       ctx.beginPath();
-      const foot = by + amp * 0.4;
+      const foot = low;
       for (const [pi, lv, rv] of L.peaks) {
         const side = pts[pi][0] < sx ? -1 : 1;
         const v = side < 0 ? lv : rv;
@@ -220,26 +222,20 @@ const himalaya = {
         ctx.lineTo(pts[pi][0] - side * Math.abs(pts[v][0] - pts[pi][0]) * 0.35, foot);
         ctx.closePath();
       }
-      ctx.fillStyle = 'rgba(20,28,58,0.24)';
+      const shadow = ctx.createLinearGradient(0, top, 0, by);
+      shadow.addColorStop(0, 'rgba(20,28,58,0.28)');
+      shadow.addColorStop(1, 'rgba(20,28,58,0)');
+      ctx.fillStyle = shadow;
       ctx.fill();
-
-      // mist at the foot of each range
-      const mist = ctx.createLinearGradient(0, by - amp * 0.55, 0, by);
-      mist.addColorStop(0, 'rgba(225,228,240,0)');
-      mist.addColorStop(1, 'rgba(225,228,240,0.3)');
-      ctx.fillStyle = mist;
-      ctx.fillRect(0, by - amp * 0.55, w, low - by + amp * 0.55);
-      ctx.fillStyle = 'rgba(225,228,240,0.3)';
-      ctx.fillRect(0, by, w, low - by);
     }
 
     // front ridge: the sound itself
-    const fn = st.fn, fb = h * 0.97;
+    const fn = st.fn, fb = h * (f.portrait ? 0.9 : 0.97), fk = f.portrait ? 1.3 : 1;
     const fp = [];
     for (let i = 0; i < fn; i++) {
       const x = i / (fn - 1);
       const v = fromCentre(st.front, x, 0.42, 2) * (0.85 + 0.15 * Math.sin(i * 0.6 - f.t * 2));
-      fp.push([x * w, fb - s * (0.06 + 0.06 * st.frontProf[i] + 0.2 * v * (1 + a.kick * 0.18))]);
+      fp.push([x * w, fb - s * fk * (0.06 + 0.06 * st.frontProf[i] + 0.2 * v * (1 + a.kick * 0.18))]);
     }
     ctx.beginPath();
     smoothLine(ctx, fp);
@@ -271,10 +267,12 @@ const prayerFlags = {
   setup(f) {
     const { w, s } = f;
     const r = rng(5);
-    const k = f.portrait ? 1.35 : 1;
-    const defs = [
-      { x0: -0.04 * w, y0: -0.03 * s * k, x1: 1.04 * w, y1: 0.1 * s * k, cy: 0.27 * s * k, size: 0.78, dark: 0.22 },
-      { x0: -0.04 * w, y0: 0.06 * s * k, x1: 1.04 * w, y1: 0.0 * s, cy: 0.37 * s * k, size: 1, dark: 0 },
+    const defs = f.portrait ? [
+      { x0: -0.04 * w, y0: 0.02 * s, x1: 1.04 * w, y1: 0.1 * s, cy: 0.34 * s, size: 0.8, dark: 0.22 },
+      { x0: -0.04 * w, y0: 0.14 * s, x1: 1.04 * w, y1: 0.05 * s, cy: 0.5 * s, size: 1, dark: 0 },
+    ] : [
+      { x0: -0.04 * w, y0: -0.03 * s, x1: 1.04 * w, y1: 0.1 * s, cy: 0.27 * s, size: 0.78, dark: 0.22 },
+      { x0: -0.04 * w, y0: 0.06 * s, x1: 1.04 * w, y1: 0.0 * s, cy: 0.37 * s, size: 1, dark: 0 },
     ];
     const strings = defs.map((d, j) => {
       const fw = s * (f.portrait ? 0.095 : 0.075) * d.size, gap = fw * 0.3;
@@ -1097,7 +1095,7 @@ const tihar = {
     ? { title: { y: 0.72, font: 'yatra', color: '#ffd27a', style: 'glow' }, sub: { y: 0.765 } }
     : { title: { y: 0.74, font: 'yatra', color: '#ffd27a', style: 'glow' }, sub: { y: 0.82 } }),
   setup(f) {
-    const { w, s } = f;
+    const { s } = f;
     const D = Math.max(8, Math.round(s * 0.05));
     const K = f.portrait ? 2 : f.square ? 3 : 4;
     const r = rng(17);
@@ -1121,7 +1119,6 @@ const tihar = {
         return c;
       })(),
       spacing: D * 0.7,
-      wOld: w,
     };
   },
   draw(ctx, f, st) {
@@ -1159,6 +1156,7 @@ const tihar = {
       lights.push([hx(k), hy, hx(k + 1), hy, s * 0.24]);
     }
     lights.push([-0.02 * w, s * 0.02, 1.02 * w, s * 0.02, s * (f.portrait ? 0.42 : 0.36)]);
+    if (f.portrait) lights.push([-0.02 * w, s * 0.3, 1.02 * w, s * 0.3, s * 0.5]);
     ctx.lineWidth = Math.max(1, s * 0.0018);
     ctx.strokeStyle = 'rgba(30,20,10,0.7)';
     let bi = 0;

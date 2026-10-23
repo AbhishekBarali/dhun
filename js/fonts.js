@@ -23,9 +23,26 @@ export function fontCss(id, px, weightOverride) {
   return `${w} ${Math.round(px)}px "${f.family}", "Mukta", system-ui, sans-serif`;
 }
 
+// The Google Fonts stylesheet may still be downloading when the app starts.
+// Asking for a font before it arrives silently does nothing, so wait for it.
+let cssReady = null;
+function fontCssLoaded() {
+  if (!cssReady) {
+    cssReady = new Promise((resolve) => {
+      const link = document.querySelector('link[href*="fonts.googleapis.com/css"]');
+      if (!link || link.sheet) { resolve(); return; }
+      link.addEventListener('load', () => resolve(), { once: true });
+      link.addEventListener('error', () => resolve(), { once: true });
+      setTimeout(resolve, 10000);
+    });
+  }
+  return cssReady;
+}
+
 // Make sure a font is downloaded before drawing it on the canvas.
 export async function ensureFont(id, text = 'Aa कखग') {
   if (!document.fonts || !document.fonts.load) return;
+  await fontCssLoaded();
   const f = fontById(id);
   try {
     await Promise.all([

@@ -176,8 +176,7 @@ const lasers = {
   draw(ctx, f, st) {
     const { w, h, s, a } = f;
     const cols = neon(f, st);
-    photoBackground(ctx, f, { dim: 0.6, zoom: 0.08, punch: 0.01 });
-    fadeEdge(ctx, f, 'bottom', 0.5, 0.6, '#05020c');
+    photoBackground(ctx, f, { dim: 0.66, zoom: 0.08, punch: 0.01 });
     if (a.beatHit) st.ci++;
     // every 8 beats the beams change pattern: fan, cross, straight up
     const mode = Math.floor(a.beats / 8) % 3;
@@ -234,7 +233,7 @@ const lasers = {
         ctx.lineWidth = Math.max(1, s * 0.0028);
         ctx.beginPath();
         ctx.moveTo(sx, sy);
-        ctx.lineTo(ex, ey);
+        ctx.lineTo(sx + (ex - sx) * 0.75, sy + (ey - sy) * 0.75);
         ctx.stroke();
       }
       // glowing source in the corner
@@ -635,7 +634,7 @@ const kaleido = {
   cat: 'dance',
   text: (f) => ({
     title: { y: 0.5 - 0.022 * f.s / f.h, font: 'baloo', style: 'glow', size: 0.068 },
-    sub: { y: 0.5 + 0.06 * f.s / f.h, font: 'monoton', style: 'glow', color: 'accent', size: 0.036, opacity: 1 },
+    sub: { y: 0.5 + 0.06 * f.s / f.h, font: 'baloo', style: 'glow', color: 'accent', size: 0.036, opacity: 1 },
   }),
   setup: () => ({ rot: 0 }),
   draw(ctx, f, st) {
