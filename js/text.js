@@ -19,6 +19,7 @@ export function makeItem(role, text, props = {}) {
     align: 'center',
     upper: false,
     opacity: 1,
+    hidden: false,    // the "Show" tick is off
     touched: {},      // fields the user changed by hand (kept when switching looks)
     ...props,
   };
@@ -63,7 +64,7 @@ function resolveColor(c, f) {
 export function drawItem(ctx, f, it, alpha = 1, pulse = 0) {
   const raw = it.upper ? it.text.toUpperCase() : it.text;
   const lines = raw.split('\n').filter((l, i, arr) => l.length || arr.length === 1);
-  if (!raw.trim()) { it._box = null; return; }
+  if (it.hidden || !raw.trim()) { it._box = null; return; }
   let px = it.size * f.s * (1 + pulse);
   ctx.save();
   ctx.font = fontCss(it.font, px);

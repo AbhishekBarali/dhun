@@ -76,6 +76,16 @@ const EN = {
   introLong: 'Only the first 30 seconds of this clip will be used.',
   newText: 'New words',
   failed: 'Something went wrong while making the video. Please try again.',
+  show: 'Show',
+  preparing: 'Getting ready…',
+  keepOpenFast: 'Keep this screen open until it finishes. It is much quicker than the song.',
+  left: 'about {time} left',
+  overlay: 'Wave at the bottom',
+  off: 'None',
+  wave: 'Soft wave',
+  bars: 'Bars',
+  line: 'Line',
+  makeInfoFast: 'Length {len} · quick to make',
 };
 
 const NE = {
@@ -155,6 +165,16 @@ const NE = {
   introLong: 'यो भिडियोको पहिलो ३० सेकेन्ड मात्र राखिन्छ।',
   newText: 'नयाँ अक्षर',
   failed: 'भिडियो बनाउँदा समस्या भयो। फेरि प्रयास गर्नुहोस्।',
+  show: 'देखाउने',
+  preparing: 'तयारी हुँदैछ…',
+  keepOpenFast: 'नसकिँदासम्म यो स्क्रिन खुलै राख्नुहोस्। गीतभन्दा धेरै छिटो बन्छ।',
+  left: 'करिब {time} बाँकी',
+  overlay: 'तल तरंग',
+  off: 'नचाहिने',
+  wave: 'नरम तरंग',
+  bars: 'बार',
+  line: 'रेखा',
+  makeInfoFast: 'लम्बाइ {len} · छिटो बन्छ',
 };
 
 let lang = 'en';

@@ -131,13 +131,16 @@ input[type='checkbox'] { accent-color: var(--accent); width: 22px; height: 22px;
 /* text rows */
 .text-rows { display: grid; gap: 12px; margin-bottom: 12px; }
 .text-row .row-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: var(--muted); font-size: 15px; }
-.text-row input, .text-row textarea, .field input {
+.text-row input[type='text'], .text-row textarea, .field input {
   width: 100%; min-height: var(--tap); padding: 10px 12px;
   border-radius: 12px; border: 1px solid var(--line); background: var(--card2);
   font-size: 18px;
 }
 .text-row textarea { resize: vertical; min-height: 64px; }
 .text-row.active input, .text-row.active textarea { border-color: var(--accent-2); }
+.text-row .show { display: flex; align-items: center; gap: 10px; min-height: 40px; cursor: pointer; }
+.text-row .show input { flex: none; width: 24px; height: 24px; margin: 0; }
+.text-row.off input[type='text'], .text-row.off textarea { opacity: 0.45; }
 .field { display: block; }
 .field > span { display: block; margin-bottom: 6px; color: var(--muted); font-size: 15px; }
 

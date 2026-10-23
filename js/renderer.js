@@ -120,6 +120,7 @@ export function drawTimeline(ctx, f, t, opts) {
   let alpha;
   if (seg.kind === 'main') {
     scene.draw(ctx, f);
+    if (opts.overlay) opts.overlay(ctx, f);
     drawItems(ctx, f, items, { alpha: clamp(local / 0.8), beatText });
     alpha = fadeAlpha(local, seg.dur, !isFirst, true);
   } else {
