@@ -8,15 +8,27 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;800&family=Bebas+Neue&family=Kalam:wght@400;700&family=Khand:wght@500;700&family=Martel:wght@400;800&family=Monoton&family=Mukta:wght@400;500;700;800&family=Permanent+Marker&family=Rozha+One&family=Teko:wght@500;600&family=Yatra+One&display=swap" rel="stylesheet">
 <style>
-  body { margin: 0; padding: 16px; background: #111; color: #ddd; font: 14px system-ui, sans-serif; }
+  body { margin: 0; padding: 24px; background: #14111a; color: #f6f1ea; font: 14px 'Mukta', system-ui, sans-serif; }
+  h1 { font-size: 26px; margin: 0 0 8px; }
+  p { color: #b9afbd; margin: 0 0 24px; }
+  a { color: #f2a93b; text-underline-offset: 3px; }
+  nav { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 24px; }
+  button { font: inherit; padding: 8px 14px; border: 1px solid #64566c; border-radius: 8px; background: #282233; color: #f6f1ea; cursor: pointer; }
+  #lookbookPreview { display: block; max-width: 100%; height: auto; margin: 16px 0; }
+  #lookbookExport { margin-bottom: 24px; }
   .grid { display: flex; flex-wrap: wrap; gap: 14px; }
   figure { margin: 0; }
-  figcaption { padding: 4px 0; }
-  canvas { display: block; background: #000; }
+  figcaption { padding: 7px 0; }
+  canvas { display: block; background: #000; max-width: 100%; height: auto; }
+  figure { max-width: 100%; }
   .err { color: #ff6b6b; }
 </style>
 </head>
 <body>
+<h1>Dhun lookbook</h1>
+<p>Sample song titles, photo and audio. Every look uses your own photo in the editor.</p>
+<nav><a href="../">Open editor</a><a href="?collection=new&size=360">30 new looks</a><a href="?collection=new&shape=tall&size=360">New · Shorts</a><a href="?collection=new&shape=square&size=360">New · Square</a><a href="?size=360">All 80 looks</a><button id="downloadLookbook" type="button" disabled>Prepare lookbook image</button></nav>
+<div id="lookbookExport" hidden><a id="downloadImage">Download PNG</a><img id="lookbookPreview" alt="Dhun lookbook with sample photos and titles"></div>
 <div class="grid" id="grid"></div>
 <script type="module" src="./gallery.js"></script>
 </body>

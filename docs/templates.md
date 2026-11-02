@@ -1,7 +1,8 @@
 # Writing a look (template)
 
 A look is a plain object in one of the family files in `js/templates/`
-(`simple.js`, `nepali.js`, `hiphop.js`, `dance.js`, `calm.js`). Each file
+(`simple.js`, `nepali.js`, `hiphop.js`, `dance.js`, `calm.js`, and the new
+`minimal.js`, `retro.js`, `heritage.js`, `cinematic.js`, `quiet.js`, `playful.js`). Each file
 exports an array of looks. `js/templates/simple.js` has two complete examples.
 
 ```js
@@ -9,7 +10,11 @@ exports an array of looks. `js/templates/simple.js` has two complete examples.
   id: 'soft-wave',          // unique, kebab-case
   name: 'Soft Wave',        // English name shown on the card
   ne: 'मधुर तरंग',           // Nepali name
-  cat: 'simple',            // simple | nepali | hiphop | dance | calm
+  cat: 'simple',            // simple | nepali | hiphop | dance | calm | retro | cinematic
+  isNew: true,              // optional: appears in the New collection
+  description: 'A quiet photo with a fine waveform.',
+  descriptionNe: 'फोटोसँगै मसिनो तरंग।',
+  tags: ['minimal', 'photo', 'wave'], // searchable style words
   text(f) {                 // optional: where the words go by default
     return { title: { y: 0.13, font: 'teko', upper: true }, sub: { y: 0.2 } };
   },
@@ -48,6 +53,13 @@ them anywhere. Fields: `x`, `y` (centre, 0..1 of width/height), `size`
 `js/fonts.js`), `color` (hex, or `'accent'` / `'accent2'`), `style`
 (`shadow`, `outline`, `glow`, `box`, `tag`, `plain`), `upper`, `opacity`.
 Leave clear space where the words go.
+
+The picker shows sample titles in thumbnails, so keep their placement faithful
+to the full video. `studio-shared.js` has optional photo, type and audio drawing
+primitives for the new collection. Each new look owns its composition; do not
+create a new ID for a recolour. Add the family to `index.js` and run
+`node dev/check-catalog.mjs` and `/dev/verify.html` before reviewing all shapes.
+Keep existing IDs stable: the app persists both the selection and favourites.
 
 ## Helpers (`js/helpers.js`)
 

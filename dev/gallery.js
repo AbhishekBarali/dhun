@@ -4,7 +4,7 @@
 //   ?shape=wide|tall|square                   ?photo=samples/x.jpg
 //   ?times=1,4.5,9     one tile per time       ?size=480  long side of a tile
 //   ?title=...&sub=...  words to show
-import { TEMPLATES } from '../js/templates/index.js';
+import { filterLooks } from '../js/look-library.js';
 import { Scene, makeFrame } from '../js/renderer.js';
 import { fakeFeatures, makeFeatures } from '../js/audio.js';
 import { placeholderPhoto, preparePhoto } from '../js/photo.js';
@@ -32,8 +32,7 @@ async function loadPhoto() {
 async function main() {
   await ensureAllFonts();
   const photo = await loadPhoto();
-  let list = TEMPLATES;
-  if (q.get('cat')) list = list.filter((t) => t.cat === q.get('cat'));
+  let list = filterLooks({ category: q.get('cat') || 'all', collection: q.get('collection') || 'all', query: q.get('q') || '' });
   if (q.get('id')) list = list.filter((t) => q.get('id').split(',').includes(t.id));
   const grid = document.getElementById('grid');
   for (const tpl of list) {
@@ -42,7 +41,9 @@ async function main() {
       c.width = dims[0]; c.height = dims[1];
       const fig = document.createElement('figure');
       const cap = document.createElement('figcaption');
-      cap.textContent = `${tpl.id} · ${tpl.name} · ${tpl.ne} · ${tpl.cat} · t=${T}`;
+      cap.textContent = `${tpl.name} · ${tpl.ne}`;
+      fig.dataset.id = tpl.id;
+      fig.title = `${tpl.id} · ${tpl.cat} · t=${T}`;
       fig.append(c, cap);
       grid.append(fig);
       const ctx = c.getContext('2d');
@@ -99,5 +100,34 @@ async function main() {
     }
   }
   window.__done = true;
+  const download = document.getElementById('downloadLookbook');
+  download.disabled = false;
+  download.addEventListener('click', () => {
+    const figures = [...grid.querySelectorAll('figure')];
+    if (!figures.length) return;
+    const columns = shape === 'tall' ? 6 : 3, gap = 24;
+    const cellW = dims[0], cellH = dims[1] + 40;
+    const sheet = document.createElement('canvas');
+    sheet.width = columns * (cellW + gap) + gap;
+    sheet.height = Math.ceil(figures.length / columns) * (cellH + gap) + 100;
+    const ctx = sheet.getContext('2d');
+    ctx.fillStyle = '#14111a'; ctx.fillRect(0, 0, sheet.width, sheet.height);
+    ctx.fillStyle = '#f6f1ea'; ctx.font = '700 30px "Mukta", sans-serif';
+    ctx.fillText(`Dhun · ${figures.length} looks`, gap, 44);
+    ctx.fillStyle = '#b9afbd'; ctx.font = '16px "Mukta", sans-serif';
+    ctx.fillText('Sample photo and song titles · Your photo makes each look your own.', gap, 70);
+    figures.forEach((fig, i) => {
+      const x = gap + (i % columns) * (cellW + gap), y = 100 + Math.floor(i / columns) * (cellH + gap);
+      ctx.drawImage(fig.querySelector('canvas'), x, y);
+      ctx.fillStyle = '#f6f1ea'; ctx.font = '500 18px "Mukta", sans-serif';
+      ctx.fillText(fig.querySelector('figcaption').textContent, x, y + dims[1] + 27, cellW);
+    });
+    const img = document.getElementById('lookbookPreview');
+    img.src = sheet.toDataURL('image/png');
+    const link = document.getElementById('downloadImage');
+    link.href = img.src; link.download = `dhun-lookbook-${shape}.png`;
+    document.getElementById('lookbookExport').hidden = false;
+    link.focus();
+  });
 }
 main().catch((e) => { errors.push(String(e && e.stack || e)); window.__done = true; });

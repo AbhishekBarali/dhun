@@ -63,10 +63,30 @@
     </div>
   </section>
 
-  <section class="card">
-    <h2><span class="num">2</span><span data-i18n="step2">Pick a look</span></h2>
-    <div class="chips scroll" id="catChips" role="tablist"></div>
+  <section class="card" id="looksCard" aria-labelledby="looksHeading">
+    <h2 id="looksHeading"><span class="num">2</span><span data-i18n="step2">Pick a look</span></h2>
+    <p class="card-sub" data-i18n="looksIntro">Find a style for your song. Save the ones you love.</p>
+    <div class="look-collections" id="collectionChips" role="group" aria-label="Look collection"></div>
+    <label class="look-search" for="lookSearch">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+      <span class="sr-only" data-i18n="searchLooks">Search looks</span>
+      <input id="lookSearch" type="search" autocomplete="off" placeholder="Try minimal, radio, or a look name">
+    </label>
+    <div class="chips look-categories" id="catChips" role="group" aria-label="Look category"></div>
+    <div class="look-results">
+      <p id="lookCount" role="status" aria-live="polite" aria-atomic="true"></p>
+      <button id="resetLooks" type="button" class="btn link small" data-i18n="resetLooks" hidden>Clear filters</button>
+    </div>
+    <div class="look-current">
+      <span id="selectedLook"></span>
+      <button id="findLook" type="button" class="btn link small" data-i18n="findSelected">Find selected</button>
+    </div>
     <div class="looks" id="looks"></div>
+    <div id="looksEmpty" class="looks-empty" hidden>
+      <strong id="looksEmptyTitle"></strong>
+      <p id="looksEmptyHint"></p>
+    </div>
+    <button id="moreLooks" class="btn more-looks" type="button"></button>
   </section>
 
   <section class="card" id="wordsCard">

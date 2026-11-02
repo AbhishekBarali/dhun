@@ -1,6 +1,7 @@
 // Dhun: the screen. Wires the pickers, looks, words, intro/outro and the
 // "Make video" button to the audio engine, renderer and recorder.
 import { TEMPLATES, CATEGORIES, templateById } from './templates/index.js';
+import { NEW_LOOKS, PAGE_SIZE, filterLooks, cleanFavorites } from './look-library.js';
 import { AudioEngine, OfflineAnalyser, fakeFeatures, makeFeatures } from './audio.js';
 import { loadImageFile, preparePhoto, placeholderPhoto } from './photo.js';
 import { FONTS, ensureFont, ensureAllFonts } from './fonts.js';
@@ -57,6 +58,10 @@ const fakeA = makeFeatures();
 const state = {
   tplId: TEMPLATES.some((x) => x.id === saved.tplId) ? saved.tplId : TEMPLATES[0].id,
   cat: 'all',
+  collection: 'all',
+  query: '',
+  favorites: cleanFavorites(saved.favorites),
+  lookLimit: PAGE_SIZE,
   shape: SHAPES[saved.shape] ? saved.shape : 'wide',
   theme: THEMES.some((x) => x.id === saved.theme) ? saved.theme : 'auto',
   part: 'full',
@@ -88,6 +93,7 @@ function persist() {
     lang: getLang(), tplId: state.tplId, shape: state.shape, theme: state.theme,
     motion: state.motion, beatText: state.beatText, remember: state.remember,
     overlay: state.overlay,
+    favorites: state.favorites,
     sub: subItem() ? subItem().text : '',
     hideTitle: titleItem() ? titleItem().hidden : false,
     hideSub: subItem() ? subItem().hidden : false,
@@ -290,55 +296,162 @@ view.addEventListener('pointercancel', endDrag);
 // ---------- looks ----------
 function renderChips(id, values, current, onPick, label) {
   const box = $(id);
+  const focused = box.contains(document.activeElement) ? document.activeElement.dataset.value : null;
   box.textContent = '';
   for (const v of values) {
     box.append(el('button', {
-      class: 'chip', type: 'button', 'aria-pressed': String(v === current), text: label(v),
+      class: 'chip', type: 'button', 'data-value': v, 'aria-pressed': String(v === current), text: label(v),
       onclick: () => onPick(v),
     }));
   }
+  if (focused) [...box.children].find((b) => b.dataset.value === focused)?.focus({ preventScroll: true });
+}
+
+const lookName = (tp) => getLang() === 'ne' ? tp.ne : tp.name;
+const lookDescription = (tp) => getLang() === 'ne' ? tp.descriptionNe : tp.description;
+function filteredLooks(category = state.cat) {
+  return filterLooks({ category, collection: state.collection, query: state.query, favorites: state.favorites });
+}
+
+function renderCollections() {
+  renderChips('collectionChips', ['all', 'new', 'favorites'], state.collection, (value) => {
+    state.collection = value; state.lookLimit = PAGE_SIZE;
+    renderCollections(); renderCats(); renderLooks();
+  }, (value) => value === 'all' ? t('allLooks') : value === 'new'
+    ? `${t('newLooks')} · ${NEW_LOOKS.length}` : `${t('savedLooks')} · ${state.favorites.length}`);
+  $('collectionChips').setAttribute('aria-label', t('lookCollection'));
 }
 
 function renderCats() {
-  renderChips('catChips', CATEGORIES.map((c) => c.id), state.cat, (c) => { state.cat = c; renderCats(); renderLooks(); },
-    (c) => { const cat = CATEGORIES.find((x) => x.id === c); return getLang() === 'ne' ? cat.ne : cat.name; });
+  const available = filteredLooks('all');
+  renderChips('catChips', CATEGORIES.map((c) => c.id), state.cat, (c) => {
+    state.cat = c; state.lookLimit = PAGE_SIZE; renderCats(); renderLooks();
+  }, (c) => {
+    const cat = CATEGORIES.find((x) => x.id === c);
+    const count = c === 'all' ? available.length : available.filter((tp) => tp.cat === c).length;
+    return `${getLang() === 'ne' ? cat.ne : cat.name} · ${count}`;
+  });
+  $('catChips').setAttribute('aria-label', t('lookCategory'));
 }
 
 const thumbCanvases = new Map();
+const thumbReady = new Set();
+function heartIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M20.3 4.9a5.3 5.3 0 0 0-7.5 0l-.8.8-.8-.8a5.3 5.3 0 0 0-7.5 7.5L12 20l8.3-7.6a5.3 5.3 0 0 0 0-7.5Z');
+  svg.append(path); return svg;
+}
+
+function updateSelectedLook() { $('selectedLook').textContent = t('selectedLook', { name: lookName(tpl()) }); }
+
 function renderLooks() {
   const box = $('looks');
   box.textContent = '';
-  for (const tp of TEMPLATES) {
-    if (state.cat !== 'all' && tp.cat !== state.cat) continue;
+  const matches = filteredLooks();
+  const visible = matches.slice(0, state.lookLimit);
+  for (const tp of visible) {
     let c = thumbCanvases.get(tp.id);
-    if (!c) { c = document.createElement('canvas'); thumbCanvases.set(tp.id, c); }
-    box.append(el('button', {
-      class: 'look', type: 'button', 'aria-pressed': String(tp.id === state.tplId),
+    if (!c) {
+      c = document.createElement('canvas');
+      c.setAttribute('aria-hidden', 'true');
+      const [w, h] = SHAPES[state.shape].thumb; c.width = w * 2; c.height = h * 2;
+      thumbCanvases.set(tp.id, c);
+    }
+    const name = lookName(tp), description = lookDescription(tp);
+    const choose = el('button', {
+      class: 'look', type: 'button', 'data-look-id': tp.id,
+      'aria-pressed': String(tp.id === state.tplId), 'aria-label': name,
       onclick: () => pickTemplate(tp.id),
-    }, [c, el('span', { text: getLang() === 'ne' ? tp.ne : tp.name })]));
+    }, [c,
+      tp.isNew ? el('span', { class: 'look-new', text: t('newLooks'), 'aria-hidden': 'true' }) : null,
+      el('span', { class: 'look-name', text: name }),
+      description ? el('span', { class: 'look-description', text: description }) : null,
+    ]);
+    const saved = state.favorites.includes(tp.id);
+    const save = el('button', {
+      class: 'look-save', type: 'button', 'aria-pressed': String(saved),
+      'aria-label': t(saved ? 'unsaveLook' : 'saveLook', { name }),
+      onclick: () => {
+        const had = state.favorites.includes(tp.id);
+        state.favorites = had ? state.favorites.filter((id) => id !== tp.id) : [...state.favorites, tp.id];
+        persist(); renderCollections(); renderCats();
+        if (state.collection === 'favorites') {
+          const index = visible.findIndex((look) => look.id === tp.id);
+          renderLooks();
+          const buttons = $('looks').querySelectorAll('.look-save');
+          (buttons[Math.min(index, buttons.length - 1)] || $('collectionChips').querySelector('[aria-pressed="true"]'))?.focus({ preventScroll: true });
+        } else {
+          save.setAttribute('aria-pressed', String(!had));
+          save.setAttribute('aria-label', t(had ? 'saveLook' : 'unsaveLook', { name }));
+        }
+      },
+    }, [heartIcon()]);
+    box.append(el('div', { class: 'look-card' }, [choose, save]));
   }
+  $('lookCount').textContent = t('showingLooks', { shown: visible.length, count: matches.length });
+  $('resetLooks').hidden = state.cat === 'all' && state.collection === 'all' && !state.query;
+  $('moreLooks').hidden = visible.length >= matches.length;
+  $('moreLooks').textContent = t('moreLooks', { count: Math.min(PAGE_SIZE, matches.length - visible.length) });
+  $('looksEmpty').hidden = matches.length > 0;
+  const noSaved = state.collection === 'favorites' && !state.favorites.length;
+  $('looksEmptyTitle').textContent = t(noSaved ? 'noSavedLooks' : 'noLooks');
+  $('looksEmptyHint').textContent = t(noSaved ? 'noSavedLooksHint' : 'noLooksHint');
+  updateSelectedLook();
+  renderThumbs(false);
 }
 
 function pickTemplate(id) {
   state.tplId = id;
   scene.setTemplate(tpl());
   applyLayout(state.items, tpl(), pf);
-  for (const b of $('looks').querySelectorAll('.look')) b.setAttribute('aria-pressed', 'false');
-  const idx = TEMPLATES.filter((x) => state.cat === 'all' || x.cat === state.cat).findIndex((x) => x.id === id);
-  const btn = $('looks').querySelectorAll('.look')[idx];
-  if (btn) btn.setAttribute('aria-pressed', 'true');
+  for (const b of $('looks').querySelectorAll('.look')) b.setAttribute('aria-pressed', String(b.dataset.lookId === id));
+  updateSelectedLook();
   const fonts = state.items.map((i) => ensureFont(i.font, i.text || 'Aa क'));
   Promise.all(fonts).catch(() => {});
   if (state.selected) renderEditor();
   persist();
 }
 
-// Draw a small still of every look, a few at a time so the page stays smooth.
+let lookSearchTimer;
+$('lookSearch').addEventListener('input', () => {
+  clearTimeout(lookSearchTimer);
+  lookSearchTimer = setTimeout(() => {
+    state.query = $('lookSearch').value; state.lookLimit = PAGE_SIZE;
+    renderCats(); renderLooks();
+  }, 120);
+});
+function resetLookFilters() {
+  clearTimeout(lookSearchTimer);
+  state.cat = 'all'; state.collection = 'all'; state.query = ''; state.lookLimit = PAGE_SIZE;
+  $('lookSearch').value = '';
+  renderCollections(); renderCats();
+}
+$('resetLooks').addEventListener('click', () => { resetLookFilters(); renderLooks(); $('lookSearch').focus({ preventScroll: true }); });
+$('moreLooks').addEventListener('click', () => {
+  const before = Math.min(state.lookLimit, filteredLooks().length);
+  state.lookLimit += PAGE_SIZE; renderLooks();
+  $('looks').querySelectorAll('.look')[before]?.focus({ preventScroll: true });
+});
+$('findLook').addEventListener('click', () => {
+  resetLookFilters();
+  const index = filteredLooks().findIndex((look) => look.id === state.tplId);
+  state.lookLimit = Math.ceil((index + 1) / PAGE_SIZE) * PAGE_SIZE;
+  renderLooks();
+  const button = [...$('looks').querySelectorAll('.look')].find((b) => b.dataset.lookId === state.tplId);
+  button?.focus({ preventScroll: true });
+  button?.scrollIntoView({ block: 'center', behavior: 'instant' });
+});
+
+// Render only the visible page; retain stills while browsing. Never animate
+// 80 tiny canvases at once. Photo/shape/theme changes invalidate the cache.
 let thumbJob = 0;
-function renderThumbs() {
+function renderThumbs(invalidate = true) {
+  if (invalidate) thumbReady.clear();
   const job = ++thumbJob;
   const [w, h] = SHAPES[state.shape].thumb;
-  const list = [...TEMPLATES];
+  const list = filteredLooks().slice(0, state.lookLimit).filter((tp) => !thumbReady.has(tp.id));
   const step = () => {
     if (job !== thumbJob) return;
     for (const tp of list.splice(0, 3)) {
@@ -349,6 +462,7 @@ function renderThumbs() {
       const f = makeFrame(c.width, c.height);
       f.photo = state.photo;
       f.color = colors();
+      f.motion = state.motion;
       f.a = makeFeatures();
       const sc = new Scene();
       sc.setTemplate(tp);
@@ -359,6 +473,12 @@ function renderThumbs() {
         sc.draw(ctx, f);
         if (ov) ov(ctx, f);
       }
+      // Sample words make each composition readable before a song is chosen.
+      const items = [makeItem('title', getLang() === 'ne' ? 'मेरो गीत' : 'Your song'),
+        makeItem('sub', getLang() === 'ne' ? 'गायकको नाम' : 'Artist name')];
+      applyLayout(items, tp, f);
+      for (const item of items) drawItem(ctx, f, item);
+      thumbReady.add(tp.id);
     }
     if (list.length) setTimeout(step, 0);
   };
@@ -1031,6 +1151,9 @@ $('againBtn').addEventListener('click', () => {
 function applyLang(l) {
   setLang(l);
   $('langBtn').textContent = l === 'ne' ? 'English' : 'नेपाली';
+  $('lookSearch').placeholder = t('searchLooksHint');
+  thumbReady.clear();
+  renderCollections();
   renderCats();
   renderLooks();
   renderTextRows();
