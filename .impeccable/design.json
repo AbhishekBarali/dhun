@@ -1,0 +1,360 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-02T18:19:10.504976+00:00",
+  "title": "Design System: Dhun",
+  "extensions": {
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Deep plum",
+        "tonalRamp": [
+          "oklch(15.0% 0.0186 299.9)",
+          "oklch(26.4% 0.0186 299.9)",
+          "oklch(37.9% 0.0186 299.9)",
+          "oklch(49.3% 0.0186 299.9)",
+          "oklch(60.7% 0.0186 299.9)",
+          "oklch(72.1% 0.0186 299.9)",
+          "oklch(83.6% 0.0186 299.9)",
+          "oklch(95.0% 0.0186 299.9)"
+        ]
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Plum",
+        "tonalRamp": [
+          "oklch(15.0% 0.0236 299.8)",
+          "oklch(26.4% 0.0236 299.8)",
+          "oklch(37.9% 0.0236 299.8)",
+          "oklch(49.3% 0.0236 299.8)",
+          "oklch(60.7% 0.0236 299.8)",
+          "oklch(72.1% 0.0236 299.8)",
+          "oklch(83.6% 0.0236 299.8)",
+          "oklch(95.0% 0.0236 299.8)"
+        ]
+      },
+      "card2": {
+        "role": "neutral",
+        "displayName": "Raised plum",
+        "tonalRamp": [
+          "oklch(15.0% 0.0322 300.4)",
+          "oklch(26.4% 0.0322 300.4)",
+          "oklch(37.9% 0.0322 300.4)",
+          "oklch(49.3% 0.0322 300.4)",
+          "oklch(60.7% 0.0322 300.4)",
+          "oklch(72.1% 0.0322 300.4)",
+          "oklch(83.6% 0.0322 300.4)",
+          "oklch(95.0% 0.0322 300.4)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Muted plum",
+        "tonalRamp": [
+          "oklch(15.0% 0.0361 302.8)",
+          "oklch(26.4% 0.0361 302.8)",
+          "oklch(37.9% 0.0361 302.8)",
+          "oklch(49.3% 0.0361 302.8)",
+          "oklch(60.7% 0.0361 302.8)",
+          "oklch(72.1% 0.0361 302.8)",
+          "oklch(83.6% 0.0361 302.8)",
+          "oklch(95.0% 0.0361 302.8)"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Warm white",
+        "tonalRamp": [
+          "oklch(15.0% 0.0108 76.6)",
+          "oklch(26.4% 0.0108 76.6)",
+          "oklch(37.9% 0.0108 76.6)",
+          "oklch(49.3% 0.0108 76.6)",
+          "oklch(60.7% 0.0108 76.6)",
+          "oklch(72.1% 0.0108 76.6)",
+          "oklch(83.6% 0.0108 76.6)",
+          "oklch(95.0% 0.0108 76.6)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Soft lilac",
+        "tonalRamp": [
+          "oklch(15.0% 0.0226 316.4)",
+          "oklch(26.4% 0.0226 316.4)",
+          "oklch(37.9% 0.0226 316.4)",
+          "oklch(49.3% 0.0226 316.4)",
+          "oklch(60.7% 0.0226 316.4)",
+          "oklch(72.1% 0.0226 316.4)",
+          "oklch(83.6% 0.0226 316.4)",
+          "oklch(95.0% 0.0226 316.4)"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Coral",
+        "tonalRamp": [
+          "oklch(15.0% 0.2017 21.2)",
+          "oklch(26.4% 0.2017 21.2)",
+          "oklch(37.9% 0.2017 21.2)",
+          "oklch(49.3% 0.2017 21.2)",
+          "oklch(60.7% 0.2017 21.2)",
+          "oklch(72.1% 0.2017 21.2)",
+          "oklch(83.6% 0.2017 21.2)",
+          "oklch(95.0% 0.2017 21.2)"
+        ]
+      },
+      "accent-2": {
+        "role": "secondary",
+        "displayName": "Amber",
+        "tonalRamp": [
+          "oklch(15.0% 0.1471 73.0)",
+          "oklch(26.4% 0.1471 73.0)",
+          "oklch(37.9% 0.1471 73.0)",
+          "oklch(49.3% 0.1471 73.0)",
+          "oklch(60.7% 0.1471 73.0)",
+          "oklch(72.1% 0.1471 73.0)",
+          "oklch(83.6% 0.1471 73.0)",
+          "oklch(95.0% 0.1471 73.0)"
+        ]
+      },
+      "ok": {
+        "role": "secondary",
+        "displayName": "Success green",
+        "tonalRamp": [
+          "oklch(15.0% 0.1362 159.3)",
+          "oklch(26.4% 0.1362 159.3)",
+          "oklch(37.9% 0.1362 159.3)",
+          "oklch(49.3% 0.1362 159.3)",
+          "oklch(60.7% 0.1362 159.3)",
+          "oklch(72.1% 0.1362 159.3)",
+          "oklch(83.6% 0.1362 159.3)",
+          "oklch(95.0% 0.1362 159.3)"
+        ]
+      },
+      "canvas-paper": {
+        "role": "neutral",
+        "displayName": "Canvas paper",
+        "tonalRamp": [
+          "oklch(15.0% 0.0181 89.4)",
+          "oklch(26.4% 0.0181 89.4)",
+          "oklch(37.9% 0.0181 89.4)",
+          "oklch(49.3% 0.0181 89.4)",
+          "oklch(60.7% 0.0181 89.4)",
+          "oklch(72.1% 0.0181 89.4)",
+          "oklch(83.6% 0.0181 89.4)",
+          "oklch(95.0% 0.0181 89.4)"
+        ]
+      },
+      "canvas-ink": {
+        "role": "neutral",
+        "displayName": "Canvas ink",
+        "tonalRamp": [
+          "oklch(15.0% 0.0095 124.8)",
+          "oklch(26.4% 0.0095 124.8)",
+          "oklch(37.9% 0.0095 124.8)",
+          "oklch(49.3% 0.0095 124.8)",
+          "oklch(60.7% 0.0095 124.8)",
+          "oklch(72.1% 0.0095 124.8)",
+          "oklch(83.6% 0.0095 124.8)",
+          "oklch(95.0% 0.0095 124.8)"
+        ]
+      },
+      "canvas-cream": {
+        "role": "neutral",
+        "displayName": "Canvas cream",
+        "tonalRamp": [
+          "oklch(15.0% 0.0168 88.0)",
+          "oklch(26.4% 0.0168 88.0)",
+          "oklch(37.9% 0.0168 88.0)",
+          "oklch(49.3% 0.0168 88.0)",
+          "oklch(60.7% 0.0168 88.0)",
+          "oklch(72.1% 0.0168 88.0)",
+          "oklch(83.6% 0.0168 88.0)",
+          "oklch(95.0% 0.0168 88.0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Step title",
+        "purpose": "Numbered workflow section headings."
+      },
+      "body": {
+        "displayName": "Interface body",
+        "purpose": "Readable bilingual interface copy."
+      },
+      "label": {
+        "displayName": "Label and support text",
+        "purpose": "Field labels, hints and timing controls."
+      },
+      "look-title": {
+        "displayName": "Look title",
+        "purpose": "Names beneath canvas stills."
+      },
+      "look-description": {
+        "displayName": "Look description",
+        "purpose": "Brief descriptions beneath look names."
+      }
+    },
+    "shadows": [
+      {
+        "name": "sticky-preview",
+        "value": "0 10px 20px -16px #000",
+        "purpose": "Boundary beneath the stuck preview."
+      },
+      {
+        "name": "primary-action",
+        "value": "0 8px 20px -10px rgba(232,66,79,0.8)",
+        "purpose": "Soft coral lift for primary actions."
+      },
+      {
+        "name": "toast",
+        "value": "0 10px 30px rgba(0,0,0,0.5)",
+        "purpose": "Temporary white status toast above the editor."
+      },
+      {
+        "name": "selected-swatch",
+        "value": "0 0 0 3px var(--accent-2)",
+        "purpose": "Amber ring around the selected colour swatch."
+      }
+    ],
+    "motion": [
+      {
+        "name": "recording-blink",
+        "value": "blink 1.2s infinite; 50% { opacity: 0.25; }",
+        "purpose": "Recording-dot feedback; animation is removed under prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "three-column-looks (min-width)",
+        "value": "540px"
+      },
+      {
+        "name": "compact-labels (max-width)",
+        "value": "360px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary action",
+      "kind": "button",
+      "description": "Coral export action; the full-width variant has a 60px minimum height.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"6\"></circle></svg><span>Make video</span></button>",
+      "css": ".ds-btn-primary{min-height:var(--tap,48px);padding:0 18px;border-radius:14px;border:1px solid var(--line,#3a3246);background:var(--card2,#282233);color:var(--text,#f6f1ea);font-size:17px;line-height:1.4;font-weight:600;cursor:pointer;font-family:'Mukta',system-ui,-apple-system,sans-serif;border:0;color:#fff;background:linear-gradient(180deg,#f05a5f,#d32f45);box-shadow:0 8px 20px -10px rgba(232,66,79,.8);}.ds-btn-primary:focus-visible{outline:3px solid var(--accent-2,#f2a93b);outline-offset:2px;}.ds-btn-primary:disabled{opacity:.5;} .ds-btn-primary{width:100%;min-height:60px;font-size:20px;display:flex;align-items:center;justify-content:center;gap:10px;} .ds-btn-primary svg{width:20px;height:20px;fill:#fff;}",
+      "refersTo": "button-primary"
+    },
+    {
+      "name": "Secondary action",
+      "kind": "button",
+      "description": "Raised-plum action; standard minimum height is 48px.",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\">Done</button>",
+      "css": ".ds-btn-secondary{min-height:var(--tap,48px);padding:0 18px;border-radius:14px;border:1px solid var(--line,#3a3246);background:var(--card2,#282233);color:var(--text,#f6f1ea);font-size:17px;line-height:1.4;font-weight:600;cursor:pointer;font-family:'Mukta',system-ui,-apple-system,sans-serif;}.ds-btn-secondary:focus-visible{outline:3px solid var(--accent-2,#f2a93b);outline-offset:2px;}.ds-btn-secondary:disabled{opacity:.5;}",
+      "refersTo": "button-secondary"
+    },
+    {
+      "name": "Ghost action",
+      "kind": "button",
+      "description": "Unfilled action retaining the standard border and focus ring.",
+      "html": "<button class=\"ds-btn-ghost\" type=\"button\">Cancel</button>",
+      "css": ".ds-btn-ghost{min-height:var(--tap,48px);padding:0 18px;border-radius:14px;border:1px solid var(--line,#3a3246);background:var(--card2,#282233);color:var(--text,#f6f1ea);font-size:17px;line-height:1.4;font-weight:600;cursor:pointer;font-family:'Mukta',system-ui,-apple-system,sans-serif;background:transparent;}.ds-btn-ghost:focus-visible{outline:3px solid var(--accent-2,#f2a93b);outline-offset:2px;}.ds-btn-ghost:disabled{opacity:.5;}",
+      "refersTo": "button-ghost"
+    },
+    {
+      "name": "Link action",
+      "kind": "button",
+      "description": "Amber underlined utility action. Discovery rows reduce horizontal padding to zero.",
+      "html": "<button class=\"ds-btn-link\" type=\"button\">Clear filters</button>",
+      "css": ".ds-btn-link{min-height:var(--tap,48px);padding:0 18px;border-radius:14px;border:1px solid var(--line,#3a3246);background:var(--card2,#282233);color:var(--text,#f6f1ea);font-size:17px;line-height:1.4;font-weight:600;cursor:pointer;font-family:'Mukta',system-ui,-apple-system,sans-serif;border:0;background:none;color:var(--accent-2,#f2a93b);text-decoration:underline;min-height:40px;}.ds-btn-link:focus-visible{outline:3px solid var(--accent-2,#f2a93b);outline-offset:2px;}.ds-btn-link:disabled{opacity:.5;}",
+      "refersTo": "button-link"
+    },
+    {
+      "name": "Text field",
+      "kind": "input",
+      "description": "Editable words and video-name fields use raised plum and generous tap height.",
+      "html": "<label class=\"ds-field\"><span>Video name</span><input type=\"text\" value=\"My song\"></label>",
+      "css": ".ds-field{display:block;color:var(--text,#f6f1ea);font-family:'Mukta',system-ui,-apple-system,sans-serif;} .ds-field>span{display:block;margin-bottom:6px;color:var(--muted,#b9afbd);font-size:15px;line-height:1.4;} .ds-field input{box-sizing:border-box;width:100%;min-height:var(--tap,48px);padding:10px 12px;border-radius:12px;border:1px solid var(--line,#3a3246);background:var(--card2,#282233);color:inherit;font-size:18px;line-height:1.4;font-family:'Mukta',system-ui,-apple-system,sans-serif;} .ds-field input:focus-visible{outline:3px solid var(--accent-2,#f2a93b);outline-offset:2px;} .ds-field input::selection{background:#f2a93b;color:#22190e;}",
+      "refersTo": "text-field"
+    },
+    {
+      "name": "Collection navigation",
+      "kind": "nav",
+      "description": "Quiet All, New and Saved controls above the searchable library.",
+      "html": "<div class=\"ds-collections\" role=\"group\" aria-label=\"Look collection\"><button type=\"button\" aria-pressed=\"false\">All</button><button type=\"button\" aria-pressed=\"true\">New · 30</button><button type=\"button\" aria-pressed=\"false\">Saved · 0</button></div>",
+      "css": ".ds-collections{display:flex;gap:4px;padding:4px;background:var(--bg,#14111a);border-radius:12px;margin:16px 0 12px;} .ds-collections button{flex:1;min-width:0;min-height:44px;border:0;border-radius:8px;background:transparent;padding:0 8px;color:var(--text,#f6f1ea);font-size:16px;line-height:1.4;white-space:nowrap;cursor:pointer;font-family:'Mukta',system-ui,-apple-system,sans-serif;} .ds-collections button[aria-pressed=\"true\"]{background:var(--card2,#282233);color:var(--accent-2,#f2a93b);font-weight:700;} .ds-collections button:focus-visible{outline:3px solid var(--accent-2,#f2a93b);outline-offset:2px;} @media(max-width:360px){.ds-collections button{font-size:14px;}}",
+      "refersTo": "collection-nav"
+    },
+    {
+      "name": "Option chips",
+      "kind": "chip",
+      "description": "Coral selection for shape, font and other ordinary editor choices.",
+      "html": "<div class=\"ds-chips\" role=\"group\" aria-label=\"Video shape\"><button type=\"button\" aria-pressed=\"true\">Wide</button><button type=\"button\" aria-pressed=\"false\">Tall</button><button type=\"button\" aria-pressed=\"false\">Square</button></div>",
+      "css": ".ds-chips{display:flex;flex-wrap:wrap;gap:8px;} .ds-chips button{flex:none;min-height:42px;padding:0 15px;border-radius:999px;border:1px solid var(--line,#3a3246);background:var(--card2,#282233);color:var(--text,#f6f1ea);font-size:17px;line-height:1.4;white-space:nowrap;cursor:pointer;font-family:'Mukta',system-ui,-apple-system,sans-serif;} .ds-chips button[aria-pressed=\"true\"]{background:var(--accent,#e8424f);border-color:var(--accent,#e8424f);color:#fff;font-weight:700;} .ds-chips button:focus-visible{outline:3px solid var(--accent-2,#f2a93b);outline-offset:2px;}",
+      "refersTo": "chip"
+    },
+    {
+      "name": "Category chips",
+      "kind": "chip",
+      "description": "Library category selection uses subdued maroon; category counts reflect other active filters.",
+      "html": "<div class=\"ds-categories\" role=\"group\" aria-label=\"Look category\"><button type=\"button\" aria-pressed=\"false\">All · 30</button><button type=\"button\" aria-pressed=\"true\">Vintage · 5</button><button type=\"button\" aria-pressed=\"false\">Cinematic · 5</button></div>",
+      "css": ".ds-categories{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;} .ds-categories button{flex:none;min-height:44px;padding:0 12px;border-radius:999px;border:1px solid var(--line,#3a3246);background:var(--card2,#282233);color:var(--text,#f6f1ea);font-size:14px;line-height:1.4;white-space:nowrap;cursor:pointer;font-family:'Mukta',system-ui,-apple-system,sans-serif;} .ds-categories button[aria-pressed=\"true\"]{background:#5b2634;border-color:#bb5965;color:#fff3e4;font-weight:700;} .ds-categories button:focus-visible{outline:3px solid var(--accent-2,#f2a93b);outline-offset:2px;} @media(hover:hover){.ds-categories button:hover{border-color:#a896b5;}} @media(max-width:360px){.ds-categories button{padding:0 9px;}}"
+    },
+    {
+      "name": "Workflow card",
+      "kind": "card",
+      "description": "Numbered cards group the familiar phone editing sequence.",
+      "html": "<section class=\"ds-card\"><h2><span>2</span>Pick a look</h2><p>Find a style for your song. Save the ones you love.</p></section>",
+      "css": ".ds-card{background:var(--card,#1e1a26);color:var(--text,#f6f1ea);border:1px solid var(--line,#3a3246);border-radius:var(--radius,16px);padding:14px;margin-top:14px;font-size:17px;line-height:1.4;font-family:'Mukta',system-ui,-apple-system,sans-serif;} .ds-card h2{display:flex;align-items:center;gap:10px;font-size:19px;margin:0 0 12px;font-weight:700;} .ds-card h2 span{width:28px;height:28px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:15px;background:var(--accent,#e8424f);color:#fff;} .ds-card p{margin:-6px 0 12px;color:var(--muted,#b9afbd);font-size:15px;}",
+      "refersTo": "step-card"
+    },
+    {
+      "name": "Saved-look control",
+      "kind": "custom",
+      "description": "A separate 44px heart button saves a look without selecting it.",
+      "html": "<button class=\"ds-save\" type=\"button\" aria-pressed=\"true\" aria-label=\"Remove Linen from saved looks\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20.3 4.9a5.3 5.3 0 0 0-7.5 0l-.8.8-.8-.8a5.3 5.3 0 0 0-7.5 7.5L12 20l8.3-7.6a5.3 5.3 0 0 0 0-7.5Z\"></path></svg></button>",
+      "css": ".ds-save{width:44px;height:44px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:rgba(20,17,26,.86);color:#f6f1ea;cursor:pointer;} .ds-save svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round;} .ds-save[aria-pressed=\"true\"]{color:#ffd18a;} .ds-save[aria-pressed=\"true\"] svg{fill:currentColor;} .ds-save:focus-visible{outline:3px solid var(--accent-2,#f2a93b);outline-offset:2px;} @media(hover:hover){.ds-save:hover{background:#3a293b;}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Phone-first music-video editor",
+    "overview": "Dhun uses a familiar, compact dark-plum editor around a prominent video preview. Warm text, coral actions and amber selection cues help people make a video in English or Nepali. Numbered cards keep the song-and-photo workflow understandable on a phone.\n\nThis is the established system with an expanded look library. The canvas supplies the expressive range: the original 50 looks remain, joined by 30 distinct minimal, vintage, Nepali-inspired, cinematic, calm and playful compositions. The surrounding controls stay visually consistent as the user's photo and chosen composition change.",
+    "keyCharacteristics": [
+      "A centered single column with a sticky preview and numbered editing cards.",
+      "Dark-plum surfaces, warm text, coral actions and amber state cues.",
+      "Bilingual labels and editable canvas titles with Devanagari fallback.",
+      "Photo-led canvas compositions with restrained audio response and separate browsing controls."
+    ],
+    "rules": [
+      {
+        "name": "The Canvas Palette Rule",
+        "body": "Keep the editor palette stable while allowing each composition to use its own materials and the user's photo-derived or chosen accents.",
+        "section": "colors"
+      },
+      {
+        "name": "The Editable Title Rule",
+        "body": "Reserve a clear title area in each shape and provide text defaults through the shared text renderer. Do not paint fixed song names or lyrics into a look. Titles shrink to their allocated maximum width; explicit newlines remain supported. The shared new-look defaults use plain text, title size relative to the shorter canvas side, and a smaller second line at reduced opacity. User-edited text properties survive look changes.",
+        "section": "typography"
+      },
+      {
+        "name": "The Three Shapes Rule",
+        "body": "A look is one composition adapted to all three output shapes. Verify the photo, editable title, second line and audio detail together in each shape; cropping a wide layout is not sufficient.",
+        "section": "layout"
+      }
+    ],
+    "dos": [
+      "**Do** preserve the familiar single-column editor, sticky preview and numbered workflow.",
+      "**Do** retain original template IDs and saved choices when extending the library.",
+      "**Do** support English and Nepali labels, Devanagari title fallback and readable editable text in every shape.",
+      "**Do** use the user's photo and frame-relative geometry; keep thumbnails faithful to the video composition.",
+      "**Do** preserve visible selection, keyboard focus, independent favourite buttons and progressive browsing.",
+      "**Do** keep canvas audio response restrained, with ornaments and meters inside their reserved areas."
+    ],
+    "donts": [
+      "**Don't** turn a family-specific canvas palette, typeface or ornament into an editor-wide rule.",
+      "**Don't** create another template ID for a recolour or bake fixed song text into artwork.",
+      "**Don't** add network-loaded template assets, runtime package dependencies, per-frame pixel processing or canvas filters.",
+      "**Don't** introduce full-screen strobing or assume a wide layout works unchanged in tall and square outputs.",
+      "**Don't** export editing guides or remove the user's text adjustments when switching looks."
+    ]
+  }
+}
